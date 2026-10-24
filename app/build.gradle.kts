@@ -23,6 +23,8 @@ android {
         targetSdk = 37
         versionCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
         versionName = versionProps.getProperty("VERSION_NAME", "1.0.0")
+        // On-device LLM (LiteRT-LM) native lib: 64-bit ARM phones only (keeps APK small).
+        ndk { abiFilters += listOf("arm64-v8a") }
         buildConfigField(
             "String", "UPDATE_MANIFEST_URL",
             "\"" + (project.findProperty("updateManifestUrl") as String?
@@ -53,7 +55,18 @@ android {
     }
 
     buildFeatures { buildConfig = true }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    // Store native libs compressed inside the APK: much smaller download.
+    packaging { jniLibs { useLegacyPackaging = true } }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // ./gradlew testDebugUnitTest -PscreensDir=/path renders Robolectric screenshots there.
+            it.systemProperty("screens.dir", (project.findProperty("screensDir") as String?) ?: "")
+            it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            it.systemProperty("project.root", rootProject.projectDir.absolutePath)
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -67,6 +80,9 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("com.google.android.material:material:1.14.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.test:core:1.7.0")
 }

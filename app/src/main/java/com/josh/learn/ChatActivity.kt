@@ -49,7 +49,8 @@ class ChatActivity : BaseActivity() {
             })
         }
         screen("Tutor: ${lesson.title}", scroll, bottom = bottom)
-        if (lesson.chat.isEmpty()) list.addView(muted("Ask anything about \"${lesson.title}\". Use the quick buttons to get a simpler or deeper explanation."))
+        if (lesson.chat.isEmpty()) list.addView(muted("Ask anything about \"${lesson.title}\". Use the quick buttons to get a simpler or deeper explanation." +
+            if (providers.active == Provider.LOCAL) "\n\nYou're using the Offline AI: answers are shorter and can be wrong." else ""))
         lesson.chat.forEach { bubble(it.role, it.content) }
         scrollDown()
         intent.getStringExtra(EXTRA_DRAFT)?.let { et.setText(it); et.setSelection(it.length); et.requestFocus() }
@@ -115,12 +116,13 @@ class ChatActivity : BaseActivity() {
         busy = true; send.isEnabled = false; cancelled = false
         val tv = bubble("assistant", "…")
         scrollDown()
-        val messages = Prompts.chat(lesson, lesson.chat)
+        val messages = Gen.chat(cfg, lesson, lesson.chat)
         val acc = StringBuilder()
         var last = 0L
         io.execute {
             val r = runCatching {
                 AiClient.complete(cfg, messages, { d ->
+                    if (d.startsWith(AiClient.STATUS)) { val s = d.substring(1); main.post { if (acc.isEmpty()) tv.text = s }; return@complete }
                     synchronized(acc) { acc.append(d) }
                     val now = System.currentTimeMillis()
                     if (now - last > 120) { last = now; val s = synchronized(acc) { acc.toString() }; main.post { tv.text = format(s); scrollDown() } }
@@ -129,7 +131,8 @@ class ChatActivity : BaseActivity() {
             main.post {
                 if (isDestroyed) return@post
                 busy = false; send.isEnabled = true
-                r.onSuccess { full ->
+                r.onSuccess { full0 ->
+                    val full = Prompts.stripThinking(full0)
                     tv.text = format(full)
                     lesson.chat += Msg("assistant", full)
                     while (lesson.chat.size > 40) lesson.chat.removeAt(0)

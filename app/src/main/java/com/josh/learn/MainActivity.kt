@@ -42,9 +42,9 @@ class MainActivity : BaseActivity() {
         if (savedInstanceState == null) {
             updater.quietCheck { m -> pendingUpdate = m; render() }
             val prefs = LearnApp.prefs(this)
-            if (providers.ready().isEmpty() && !prefs.getBoolean("setup_shown", false)) {
-                prefs.edit().putBoolean("setup_shown", true).apply()
-                Setup.show(this) { onProviderChanged() }
+            if (providers.ready().isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
+                prefs.edit().putBoolean("offline_setup_shown", true).apply()
+                OfflineSetup.show(this) { render() }
             }
             if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("notif_asked", false) &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -81,6 +81,27 @@ class MainActivity : BaseActivity() {
 
     // ------------------------------------------------------------- Learn tab
 
+    private val dlListener: (ModelDownloader.State) -> Unit = { st -> offlineStatus?.let { updateOfflineCard(it, st) } }
+    private var offlineStatus: android.widget.TextView? = null
+
+    override fun onStart() { super.onStart(); ModelDownloader.listen(dlListener) }
+    override fun onStop() { super.onStop(); ModelDownloader.unlisten(dlListener) }
+
+    private fun updateOfflineCard(tv: android.widget.TextView, st: ModelDownloader.State) {
+        tv.text = when (st.status) {
+            ModelDownloader.Status.RUNNING -> "Downloading ${st.model?.short}: ${st.progressText()}"
+            ModelDownloader.Status.VERIFYING -> "Checking the download…"
+            ModelDownloader.Status.DONE -> { content.post { render() }; "Ready!" }
+            ModelDownloader.Status.PAUSED, ModelDownloader.Status.FAILED -> st.message.ifEmpty { "Download stopped" } + "  Tap to resume."
+            else -> "No API key needed. One-time download, then lessons work without internet. Tap to set up."
+        }
+    }
+
+    override fun onProviderChanged() { super.onProviderChanged(); if (::content.isInitialized) render() }
+
+    private fun startTopic(topic: String, cat: Topics.Category?) =
+        createLesson(topic, defaultDifficulty(), defaultLength(), category = cat?.id)
+
     private fun home(): View = vbox(16) {
         pendingUpdate?.let { m ->
             addView(card(top = 0, onClick = { updater.startUpdate(m) }) {
@@ -88,34 +109,55 @@ class MainActivity : BaseActivity() {
                 addView(muted("Tap to download and install"))
             })
         }
-        addView(card(top = if (pendingUpdate != null) 10 else 0) {
-            addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge))
-            addView(muted("Type a topic, or paste text or a link. You can also share text or web pages to Josh Learn from other apps."))
-            val (til, et) = input("e.g. How vaccines work, Roman Empire, Kotlin coroutines")
-            et.imeOptions = EditorInfo.IME_ACTION_GO
-            val go = { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java).putExtra(NewLessonActivity.EXTRA_TOPIC, et.text?.toString() ?: "")) }
-            et.setOnEditorActionListener { _, _, _ -> go(); true }
-            addView(til)
-            addView(hbox {
-                addView(button("Create lesson") { go() })
-                addView(textBtn("Learning path") {
-                    startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)
-                        .putExtra(NewLessonActivity.EXTRA_TOPIC, et.text?.toString() ?: "").putExtra(NewLessonActivity.EXTRA_PATH, true))
-                })
+        if (providers.active == Provider.LOCAL && LocalModels.usable(context) == null) {
+            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = {
+                val st = ModelDownloader.state
+                if (st.active) startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                else if ((st.status == ModelDownloader.Status.PAUSED || st.status == ModelDownloader.Status.FAILED) && st.model != null) {
+                    ModelDownloader.start(this@MainActivity, st.model)?.let { toast(it) }
+                } else OfflineSetup.show(this@MainActivity)
+            }) {
+                addView(label("📲 Offline AI", bold = true))
+                val tv = muted(""); offlineStatus = tv; updateOfflineCard(tv, ModelDownloader.state); addView(tv)
             })
-        })
+        }
+
+        suggestedRow()
+
+        addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 4))
+        val grid = android.widget.GridLayout(context).apply { columnCount = 3; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } }
+        fun tile(emoji: String, name: String, onClick: () -> Unit, onLong: (() -> Unit)? = null) {
+            val c = card(top = 0, onClick = { onClick() }) {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(4), dp(14), dp(4), dp(14))
+                addView(label(emoji).apply { textSize = 30f; gravity = android.view.Gravity.CENTER })
+                addView(label(name, com.google.android.material.R.attr.textAppearanceLabelLarge).apply { gravity = android.view.Gravity.CENTER; maxLines = 1 })
+            }
+            onLong?.let { l -> c.setOnLongClickListener { l(); true } }
+            c.contentDescription = name
+            grid.addView(c, android.widget.GridLayout.LayoutParams(
+                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED), android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply {
+                width = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
+            })
+        }
+        Topics.categories.forEach { cat -> tile(cat.emoji, cat.name, { startTopic(Topics.pick(cat), cat) }, { subtopicSheet(cat) }) }
+        tile("🎲", "Surprise me", { val (t, c) = Topics.surprise(); startTopic(t, c) })
+        tile("➕", "Custom topic", { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)) })
+        addView(grid)
+        addView(muted("Tap a tile to start a lesson right away · press and hold to choose a sub-topic", top = 4).apply { textSize = 12f })
 
         val due = Repo.due().size
         if (Repo.cards.isNotEmpty()) addView(card(onClick = { startActivity(Intent(this@MainActivity, ReviewActivity::class.java)) }) {
-            addView(label(if (due > 0) "$due flashcard${if (due == 1) "" else "s"} due" else "All caught up", bold = true))
+            addView(label(if (due > 0) "🃏 $due flashcard${if (due == 1) "" else "s"} due" else "🃏 All caught up", bold = true))
             addView(muted(if (due > 0) "Tap to review now" else "Next review: ${nextDueText()}"))
         })
 
-        val recent = Repo.lessons.sortedByDescending { it.lastOpened }.take(3)
-        if (recent.isNotEmpty()) {
-            addView(title("Continue learning"))
-            recent.forEach { addView(lessonCard(it)) }
-        }
+        val inProgress = Repo.lessons.filter { it.progressPercent in 1..99 || (it.progressPercent == 0 && it.lastOpened > it.createdAt + 60_000) }
+            .sortedByDescending { it.lastOpened }.take(10)
+        if (inProgress.isNotEmpty()) { addView(title("Continue learning")); addView(row(inProgress.map { miniLessonCard(it) })) }
+        val recent = Repo.lessons.sortedByDescending { it.createdAt }.take(10)
+        if (recent.isNotEmpty()) { addView(title("Recent")); addView(row(recent.map { miniLessonCard(it) })) }
+
         if (Repo.paths.isNotEmpty()) {
             addView(title("Learning paths"))
             Repo.paths.sortedByDescending { it.createdAt }.forEach { p ->
@@ -127,7 +169,74 @@ class MainActivity : BaseActivity() {
                 })
             }
         }
-        if (recent.isEmpty()) addView(muted("Your lessons will appear here.", top = 16))
+        addView(textBtn("+ New learning path") {
+            startActivity(Intent(this@MainActivity, NewLessonActivity::class.java).putExtra(NewLessonActivity.EXTRA_PATH, true))
+        })
+    }
+
+    /** "Suggested for you": topics from the bundled suggested_topics.json (by priority), else local suggestions. */
+    private fun LinearLayout.suggestedRow() {
+        val sugg = Topics.suggested(context)
+        addView(title("Suggested for you", top = 0))
+        if (sugg.isNotEmpty()) {
+            addView(row(sugg.map { s ->
+                val cat = s.asCategory
+                card(top = 0, onClick = { startTopic(Topics.pick(cat), cat) }) {
+                    addView(label(s.emoji).apply { textSize = 26f })
+                    addView(label(s.title, bold = true).apply { maxLines = 2 })
+                    addView(muted(s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.category).apply { textSize = 12f; maxLines = 2 })
+                }.apply { setOnLongClickListener { subtopicSheet(cat); true }; contentDescription = s.title }
+            }))
+        } else {
+            addView(row(Topics.suggestions(context).map { (t, cat) ->
+                card(top = 0, onClick = { startTopic(t, cat) }) {
+                    addView(label(cat?.emoji ?: "⭐").apply { textSize = 22f })
+                    addView(label(t, bold = true).apply { maxLines = 2 })
+                    addView(muted(cat?.name ?: "From your interests").apply { textSize = 12f })
+                }
+            }))
+        }
+        addView(View(context), LinearLayout.LayoutParams(1, dp(12)))
+    }
+
+    private fun row(items: List<View>) = android.widget.HorizontalScrollView(this).apply {
+        isHorizontalScrollBarEnabled = false
+        clipToPadding = false
+        addView(LinearLayout(context).apply {
+            items.forEach { addView(it, LinearLayout.LayoutParams(dp(200), -1).apply { marginEnd = dp(10); topMargin = dp(6) }) }
+        })
+    }
+
+    private fun miniLessonCard(l: Lesson) = card(top = 0, onClick = { startActivity(Intent(this, LessonActivity::class.java).putExtra("id", l.id)) }) {
+        addView(label((Topics.category(l.category)?.emoji ?: "📘") + " " + l.title, bold = true).apply { maxLines = 2 })
+        addView(muted("${l.difficulty.label} · ${relTime(l.lastOpened)}").apply { textSize = 12f })
+        addView(progressBar(l.progressPercent))
+    }
+
+    private fun subtopicSheet(cat: Topics.Category) {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val done = Repo.lessons.map { it.topic.lowercase() }.toSet()
+        sheet.setContentView(ScrollView(this).apply {
+            addView(vbox(20) {
+                addView(label("${cat.emoji} ${cat.name}", com.google.android.material.R.attr.textAppearanceTitleLarge))
+                addView(muted("Pick a sub-topic to start a lesson"))
+                addView(com.google.android.material.chip.ChipGroup(context).apply {
+                    setPadding(0, dp(8), 0, 0)
+                    cat.subtopics.forEach { t ->
+                        addView(com.google.android.material.chip.Chip(context).apply {
+                            text = (if (t.lowercase() in done) "✓ " else "") + t
+                            setOnClickListener { sheet.dismiss(); startTopic(t, cat) }
+                        })
+                    }
+                })
+                addView(hbox {
+                    addView(button("🎲 Random") { sheet.dismiss(); startTopic(Topics.pick(cat), cat) })
+                    addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
+                    addView(outlined("Learning path") { sheet.dismiss(); createPath(cat.name, defaultDifficulty()) })
+                })
+            })
+        })
+        sheet.show()
     }
 
     private fun nextDueText(): String {

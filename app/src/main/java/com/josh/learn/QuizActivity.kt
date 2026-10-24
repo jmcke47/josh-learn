@@ -31,7 +31,8 @@ class QuizActivity : BaseActivity() {
         scroll.removeAllViews()
         scroll.addView(vbox(16) {
             addView(label("Test yourself", com.google.android.material.R.attr.textAppearanceHeadlineSmall))
-            addView(muted("5 multiple-choice and 2 short-answer questions, written fresh by the AI each time."))
+            addView(muted("Multiple-choice and short-answer questions, written fresh by the AI each time." +
+                if (providers.active == Provider.LOCAL) " Offline questions can occasionally have a wrong answer key." else ""))
             if (lesson.quizScores.isNotEmpty()) {
                 addView(title("Past scores"))
                 lesson.quizScores.takeLast(8).reversed().forEach { addView(label("${it.correct}/${it.total}  ·  ${relTime(it.at)}")) }
@@ -42,7 +43,7 @@ class QuizActivity : BaseActivity() {
 
     private fun generate() {
         runAi("Writing your quiz…", task = { cfg, onDelta, cancelled ->
-            Prompts.parseQuiz(AiClient.complete(cfg, Prompts.quiz(lesson), onDelta, cancelled))
+            Gen.quiz(cfg, lesson, onDelta, cancelled)
         }) { qs -> questions = qs; index = 0; correct = 0; missed.clear(); show() }
     }
 

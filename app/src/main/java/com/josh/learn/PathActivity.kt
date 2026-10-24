@@ -54,8 +54,7 @@ class PathActivity : BaseActivity() {
         val prev = path.steps.take(i).joinToString("; ") { it.title }
         val ctx = "Path \"${path.title}\", step ${i + 1} of ${path.steps.size}. Goal: ${s.goal}." + if (prev.isNotEmpty()) " Already covered: $prev." else ""
         runAi("Creating lesson ${i + 1}…", task = { cfg, onDelta, cancelled ->
-            Prompts.parseLesson(AiClient.complete(cfg, Prompts.lesson(s.title, path.difficulty, LessonLength.MEDIUM, pathContext = ctx), onDelta, cancelled),
-                s.title, path.difficulty, LessonLength.MEDIUM)
+            Gen.lesson(cfg, s.title, path.difficulty, LessonLength.MEDIUM, pathContext = ctx, onDelta = onDelta, cancelled = cancelled)
         }) { parsed ->
             parsed.lesson.pathId = path.id
             s.lessonId = parsed.lesson.id

@@ -18,10 +18,14 @@ class AiClientTest {
     private var headers = mapOf<String, String>()
     private var lastAuth: String? = null
     private var lastRequest = ""
+    private var lastPath = ""
+    private var lastHeaders = mapOf<String, String>()
 
     @Before fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/v1/chat/completions") { ex ->
+        server.createContext("/v1/") { ex ->
+            lastPath = ex.requestURI.path
+            lastHeaders = ex.requestHeaders.mapValues { it.value.firstOrNull() ?: "" }.mapKeys { it.key.lowercase() }
             lastAuth = ex.requestHeaders.getFirst("Authorization")
             lastRequest = ex.requestBody.bufferedReader().readText()
             ex.responseHeaders.add("Content-Type", contentType)
@@ -90,6 +94,46 @@ class AiClientTest {
         try { AiClient.complete(cfg(Provider.OPENAI), listOf(Msg("user", "hi"))); fail() } catch (e: AiException) {
             assertEquals(AiException.Kind.RATE_LIMIT, e.kind); assertEquals(12, e.retryAfterSec)
         }
+    }
+
+    @Test fun claudeStreamingAndHeaders() {
+        body = listOf(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi \"}}",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Josh\"}}",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}").joinToString("\n\n") + "\n\n"
+        val cfg = ProviderConfig(Provider.CLAUDE, "http://127.0.0.1:${server.address.port}/v1", "claude-sonnet-5-5", "sk-ant-TEST")
+        val out = AiClient.complete(cfg, listOf(Msg("system", "be nice"), Msg("assistant", "earlier"), Msg("user", "a"), Msg("user", "b")), { })
+        assertEquals("Hi Josh", out)
+        assertEquals("/v1/messages", lastPath)
+        assertEquals("sk-ant-TEST", lastHeaders["x-api-key"]); assertEquals(AiClient.ANTHROPIC_VERSION, lastHeaders["anthropic-version"])
+        assertEquals(null, lastHeaders["authorization"])
+        val req = org.json.JSONObject(lastRequest)
+        assertEquals("be nice", req.getString("system")); assertTrue(req.getInt("max_tokens") > 0)
+        val msgs = req.getJSONArray("messages")
+        assertEquals("user", msgs.getJSONObject(0).getString("role")) // leading assistant turn gets a user turn before it
+        assertEquals("a\n\nb", msgs.getJSONObject(msgs.length() - 1).getString("content")) // consecutive user turns merged
+    }
+
+    @Test fun claudeNonStreamingAndErrors() {
+        contentType = "application/json"
+        body = """{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"OK"}]}"""
+        val cfg = ProviderConfig(Provider.CLAUDE, "http://127.0.0.1:${server.address.port}/v1", "claude-sonnet-5-5", "sk-ant-TEST")
+        assertEquals("OK", AiClient.complete(cfg, listOf(Msg("user", "hi"))))
+        status = 529; body = """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"""
+        try { AiClient.complete(cfg, listOf(Msg("user", "hi"))); fail() } catch (e: AiException) { assertEquals(AiException.Kind.RATE_LIMIT, e.kind) }
+        status = 400; body = """{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}"""
+        try { AiClient.complete(cfg, listOf(Msg("user", "hi"))); fail() } catch (e: AiException) { assertEquals(AiException.Kind.QUOTA, e.kind) }
+    }
+
+    @Test fun localWithoutBackendIsClearError() {
+        AiClient.localBackend = null
+        try { AiClient.complete(ProviderConfig(Provider.LOCAL, "local", "qwen3-0.6b", ""), listOf(Msg("user", "hi"))); fail() }
+        catch (e: AiException) { assertEquals(AiException.Kind.LOCAL, e.kind) }
+        AiClient.localBackend = { _, m, d, _ -> d?.invoke("x"); "echo " + m.last().content }
+        assertEquals("echo hi", AiClient.complete(ProviderConfig(Provider.LOCAL, "local", "qwen3-0.6b", ""), listOf(Msg("user", "hi"))))
+        AiClient.localBackend = null
     }
 
     @Test fun sseLineParsing() {

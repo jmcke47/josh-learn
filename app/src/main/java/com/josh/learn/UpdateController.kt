@@ -235,7 +235,7 @@ class UpdateController(private val activity: AppCompatActivity) {
     }
 
     private fun download(m: Manifest, ui: StatusDialog) {
-        ui.busy("Update found: v${m.versionName}", "Updating…")
+        ui.busy("Update found, updating…", "Josh Learn v${BuildConfig.VERSION_NAME} → v${m.versionName}")
         if (m.notes.isNotBlank()) { ui.notes.text = m.notes; ui.notes.visibility = View.VISIBLE }
         ui.progress.visibility = View.VISIBLE; ui.progress.isIndeterminate = true
         val dir = File(activity.cacheDir, "updates").apply { mkdirs() }

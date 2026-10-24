@@ -14,7 +14,7 @@ import com.google.android.material.timepicker.TimeFormat
 class SettingsActivity : BaseActivity() {
     private lateinit var root: LinearLayout
     private lateinit var updater: UpdateController
-    private val expanded = mutableSetOf(Provider.GEMINI)
+    private val expanded = mutableSetOf<Provider>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,6 +25,79 @@ class SettingsActivity : BaseActivity() {
     }
 
     override fun onResume() { super.onResume(); updater.onResume() }
+    private var dlView: android.widget.TextView? = null
+    private var lastStatus: ModelDownloader.Status? = null
+    private val dlListener: (ModelDownloader.State) -> Unit = { st ->
+        if (lastStatus != null && lastStatus != st.status) render() else dlView?.text = downloadText(st)
+        lastStatus = st.status
+    }
+    override fun onStart() { super.onStart(); ModelDownloader.listen(dlListener) }
+    override fun onStop() { super.onStop(); ModelDownloader.unlisten(dlListener) }
+
+    private fun downloadText(st: ModelDownloader.State) = when (st.status) {
+        ModelDownloader.Status.RUNNING -> "Downloading ${st.model?.short}: ${st.progressText()}"
+        ModelDownloader.Status.VERIFYING -> "Checking the downloaded file…"
+        ModelDownloader.Status.PAUSED, ModelDownloader.Status.FAILED -> st.message
+        ModelDownloader.Status.DONE -> "Download complete."
+        else -> ""
+    }
+
+    private fun offlineCard() = card {
+        val st = ModelDownloader.state
+        addView(label("Offline AI (on this phone)" + if (providers.active == Provider.LOCAL) "  ✓ active" else "", bold = true))
+        addView(muted("Runs on your phone with no key and no internet. Answers are simpler than online AI and can be wrong. " +
+            "Models are kept when the app updates. Phone RAM: %.1f GB · free storage: %.1f GB".format(LocalModels.totalRamGb(context), LocalModels.freeBytes(context) / 1e9), top = 4))
+        val selected = LocalModels.selected(context)
+        LocalModel.entries.forEach { m ->
+            val installed = LocalModels.isInstalled(context, m)
+            val partial = LocalModels.partialBytes(context, m)
+            val downloadingThis = st.active && st.model == m
+            addView(card(top = 10) {
+                addView(label(m.label + (if (m == selected && installed) "  ✓ in use" else ""), bold = true))
+                addView(muted("${m.sizeText} download · ${m.license} licence · ${m.blurb}" +
+                    if (LocalModels.totalRamGb(context) < m.minRamGb - 0.5) "\n⚠ Recommended: ${m.minRamGb} GB+ RAM" else "", top = 2))
+                when {
+                    installed -> {
+                        addView(muted("Downloaded", top = 4))
+                        addView(hbox {
+                            if (m != selected) addView(button("Use this model") { LocalModels.select(context, m); LocalLlm.release(); providers.active = Provider.LOCAL; onProviderChanged() })
+                            addView(textBtn("Delete (${m.sizeText})") {
+                                MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Delete ${m.short}?")
+                                    .setMessage("Frees ${m.sizeText}. You can download it again later.")
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .setPositiveButton("Delete") { _, _ -> LocalModels.delete(context, m); onProviderChanged() }.show()
+                            })
+                        })
+                    }
+                    downloadingThis -> {
+                        val tv = muted(downloadText(st), top = 4); dlView = tv; addView(tv)
+                        addView(outlined("Pause") { ModelDownloader.pause() })
+                    }
+                    else -> {
+                        if (st.model == m && st.message.isNotEmpty() && !st.active) addView(muted(st.message, top = 4))
+                        addView(hbox {
+                            addView(button(if (partial > 0) "Resume (%.0f%% done)".format(partial * 100.0 / m.sizeBytes) else "Download") {
+                                LocalModels.select(context, m)
+                                val err = ModelDownloader.start(this@SettingsActivity, m)
+                                if (err != null) MaterialAlertDialogBuilder(this@SettingsActivity).setMessage(err).setPositiveButton(android.R.string.ok, null).show()
+                                else { providers.active = Provider.LOCAL; onProviderChanged() }
+                            }.apply { isEnabled = !st.active })
+                            if (partial > 0) addView(textBtn("Discard partial") { LocalModels.delete(context, m); render() })
+                        })
+                    }
+                }
+            })
+        }
+        addView(MaterialSwitch(context).apply {
+            text = "Download on Wi-Fi only"; isChecked = LocalModels.wifiOnly(context)
+            setOnCheckedChangeListener { _, c -> LocalModels.setWifiOnly(context, c) }
+        })
+        addView(MaterialSwitch(context).apply {
+            text = "Use GPU (faster on some phones, experimental)"; isChecked = LocalModels.useGpu(context)
+            setOnCheckedChangeListener { _, c -> LocalModels.setUseGpu(context, c); LocalLlm.release() }
+        })
+        if (providers.active != Provider.LOCAL && LocalModels.usable(context) != null) addView(textBtn("Make active") { providers.active = Provider.LOCAL; onProviderChanged() })
+    }
     override fun onProviderChanged() { super.onProviderChanged(); render() }
 
     private fun render() {
@@ -33,19 +106,31 @@ class SettingsActivity : BaseActivity() {
         root.apply {
             // ---------------- AI providers
             addView(title("AI provider", top = 0))
-            addView(muted("Active provider is used for lessons, quizzes and chat. Switch any time from the ▾ button in the toolbar."))
+            addView(muted("The active provider is used for lessons, quizzes and chat. Switch any time with the ▾ button in the toolbar. If one fails, you'll get a \"Retry with…\" option."))
             addView(ChipGroup(context).apply {
                 isSingleSelection = true
                 Provider.entries.forEach { p ->
                     addView(Chip(context, null, com.google.android.material.R.attr.chipStyle).apply {
                         id = View.generateViewId(); isCheckable = true
                         text = p.short + if (providers.isReady(p)) "" else " (not set up)"
-                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p
-                        setOnClickListener { if (providers.isReady(p)) { providers.active = p; onProviderChanged(); toast("Now using ${p.label}") } }
+                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || p == Provider.LOCAL
+                        setOnClickListener {
+                            if (providers.isReady(p) || p == Provider.LOCAL) { providers.active = p; onProviderChanged(); toast("Now using ${p.label}") }
+                        }
                     })
                 }
             })
-            Provider.entries.forEach { addView(providerCard(it)) }
+            addView(offlineCard())
+            addView(title("Online providers (optional)"))
+            addView(muted("Better answers, but need your own API key and internet. Each key is stored encrypted."))
+            Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }
+
+            // ---------------- Interests
+            addView(title("Your interests"))
+            addView(muted("Used for \"Suggested for you\" on the home screen. Separate with commas."))
+            val (iTil, iEt) = input("e.g. Roman history, investing, black holes", multiLine = true, value = Topics.interests(context).joinToString(", "))
+            addView(iTil)
+            addView(textBtn("Save interests") { Topics.setInterests(context, iEt.text?.toString() ?: ""); toast("Saved") })
 
             // ---------------- Lessons
             addView(title("New lessons"))

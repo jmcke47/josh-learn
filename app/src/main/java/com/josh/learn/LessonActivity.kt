@@ -50,6 +50,9 @@ class LessonActivity : BaseActivity() {
     private fun build() = vbox(16) {
         addView(label(lesson.title, com.google.android.material.R.attr.textAppearanceHeadlineSmall))
         addView(muted(listOf(lesson.difficulty.label, lesson.length.label, "created ${relTime(lesson.createdAt)}").joinToString(" · ")))
+        if (lesson.isOffline || lesson.model != null) addView(muted(
+            if (lesson.isOffline) "⚠ Made offline by ${lesson.model!!.removePrefix("Offline · ")}. Offline lessons are simpler and may contain mistakes; double-check important facts."
+            else "Made with ${lesson.model}", top = 6).apply { textSize = 12f })
         addView(progress.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) } })
         addView(progressText)
         refreshProgress()
@@ -119,10 +122,10 @@ class LessonActivity : BaseActivity() {
     private fun regenerate(d: Difficulty) {
         val l = lesson
         runAi("Writing a ${d.label.lowercase()} version…", task = { cfg, onDelta, cancelled ->
-            Prompts.parseLesson(AiClient.complete(cfg, Prompts.lesson(l.topic.ifBlank { l.title }, d, l.length,
-                source = "Existing lesson to adapt:\n" + l.contextText()), onDelta, cancelled), l.topic, d, l.length)
+            Gen.lesson(cfg, l.topic.ifBlank { l.title }, d, l.length,
+                source = (if (cfg.provider == Provider.LOCAL) "" else "Existing lesson to adapt:\n" + l.contextText()).ifEmpty { null }, onDelta = onDelta, cancelled = cancelled)
         }) { parsed ->
-            parsed.lesson.sourceUrl = l.sourceUrl
+            parsed.lesson.sourceUrl = l.sourceUrl; parsed.lesson.category = l.category
             Repo.addLesson(parsed.lesson, parsed.flashcards)
             startActivity(Intent(this, LessonActivity::class.java).putExtra("id", parsed.lesson.id))
         }

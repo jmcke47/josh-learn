@@ -59,7 +59,7 @@ class NewLessonActivity : BaseActivity() {
                 prefs.edit { putString("difficulty", difficulty.name); putString("length", length.name) }
                 if (pathSwitch.isChecked) generatePath(t) else generateLesson(t)
             }.apply { layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) } })
-            addView(muted("Uses your own API key. Each lesson is one request (flashcards included), so it's friendly to free tiers.", top = 12))
+            addView(muted("Works offline with the on-device AI, or with an online provider you set up in Settings.", top = 12))
         }
         screen(if (intent.getBooleanExtra(EXTRA_PATH, false)) "New learning path" else "New lesson", body, scroll = true)
         if (shared.isEmpty()) et.requestFocus()
@@ -68,44 +68,8 @@ class NewLessonActivity : BaseActivity() {
     override fun buildMenu(menu: Menu) = addProviderSwitcher(menu)
 
     private fun isSourceText(t: String) = t.length > 280 || t.count { it == '\n' } >= 3
-
-    private fun generateLesson(input: String) {
-        val d = difficulty; val len = length
-        runAi("Creating your lesson…", task = { cfg, onDelta, cancelled ->
-            var topic = input; var source: String? = null; var url: String? = null
-            if (HtmlText.isMostlyUrl(input)) {
-                url = HtmlText.findUrl(input)
-                runCatching {
-                    val html = UpdateHttp.readText(url!!)
-                    source = HtmlText.extract(html).takeIf { it.length > 200 }
-                    topic = HtmlText.title(html) ?: url!!
-                }
-                if (source == null) topic = "the web page at $url (explain the topic it is about)"
-            } else if (isSourceText(input)) {
-                source = input; topic = "the provided text"
-            }
-            val text = AiClient.complete(cfg, Prompts.lesson(topic, d, len, source), onDelta, cancelled)
-            val parsed = Prompts.parseLesson(text, if (topic == "the provided text") "" else topic.take(200), d, len)
-            if (parsed.lesson.topic.isEmpty()) parsed.lesson.topic = parsed.lesson.title
-            parsed.lesson.sourceUrl = url
-            parsed
-        }) { parsed ->
-            Repo.addLesson(parsed.lesson, parsed.flashcards)
-            startActivity(Intent(this, LessonActivity::class.java).putExtra("id", parsed.lesson.id))
-            finish()
-        }
-    }
-
-    private fun generatePath(input: String) {
-        val d = difficulty
-        runAi("Planning your learning path…", task = { cfg, onDelta, cancelled ->
-            Prompts.parsePath(AiClient.complete(cfg, Prompts.path(input, d), onDelta, cancelled), input.take(200), d)
-        }) { path ->
-            Repo.paths.add(0, path); Repo.save()
-            startActivity(Intent(this, PathActivity::class.java).putExtra("id", path.id))
-            finish()
-        }
-    }
+    private fun generateLesson(input: String) = createLesson(input, difficulty, length, finishAfter = true)
+    private fun generatePath(input: String) = createPath(input, difficulty, finishAfter = true)
 
     companion object { const val EXTRA_TOPIC = "topic"; const val EXTRA_PATH = "path" }
 }

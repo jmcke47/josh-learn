@@ -13,10 +13,20 @@ class LearnApp : Application() {
         applyTheme(this)
         DynamicColors.applyToActivitiesIfAvailable(this)
         Repo.init(this)
+        Topics.init(this)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(Reminders.CHANNEL, "Daily review reminder", NotificationManager.IMPORTANCE_DEFAULT)
                 .apply { description = "Reminds you when flashcards are due" })
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(ModelDownloadService.CHANNEL, "Offline AI download", NotificationManager.IMPORTANCE_LOW))
         Reminders.schedule(this)
+        LocalLlm.install(this)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        @Suppress("DEPRECATION")
+        if (level >= TRIM_MEMORY_COMPLETE || level == TRIM_MEMORY_RUNNING_CRITICAL) LocalLlm.release()
     }
 
     companion object {
