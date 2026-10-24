@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Josh Learn</string>
+    <string name="share_label">Learn this</string>
+    <string name="update_url">Update source URL</string>
+</resources>
