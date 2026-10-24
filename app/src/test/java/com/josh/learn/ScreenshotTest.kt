@@ -136,7 +136,9 @@ class ScreenshotTest {
     @Test fun widget() {
         assertEquals(2 to 2, TopicsWidget.grid(150, 150))
         assertEquals(4 to 2, TopicsWidget.grid(320, 180))
-        assertEquals(4 to 3, TopicsWidget.grid(320, 300))
+        assertEquals(4 to 7, TopicsWidget.grid(340, 540))   // 4x6 full screen
+        assertEquals(5 to 8, TopicsWidget.grid(420, 640))   // 5x7
+        assertEquals(5 to 8, TopicsWidget.grid(2000, 3000)) // never more slots than the layout has
         // no topics imported: built-ins
         var v = widgetView(2, 2, 170, 170)
         assertEquals(listOf("🔬\nScience", "🏛️\nHistory", "💻\nTech", "💰\nMoney"), visibleTiles(v))
@@ -151,6 +153,16 @@ class ScreenshotTest {
         val big = widgetView(4, 3, 330, 300)
         assertEquals(12, visibleTiles(big).size)
         snapView(big, "06-widget-4x3")
+        val (fc, fr) = TopicsWidget.grid(340, 540)
+        val full = widgetView(fc, fr, 340, 540)
+        val fullTiles = visibleTiles(full)
+        assertEquals(minOf(fc * fr, TopicsWidget.items(ctx, 99).size), fullTiles.size)
+        assertTrue(Topics.suggested(ctx).all { s -> fullTiles.any { it.endsWith(s.title) } }) // every imported topic shown
+        snapView(full, "07-widget-4x6-fullscreen")
+        val (gc, gr) = TopicsWidget.grid(420, 640)
+        val v57 = widgetView(gc, gr, 420, 640)
+        assertEquals(TopicsWidget.items(ctx, 99).size.coerceAtMost(gc * gr), visibleTiles(v57).size)
+        snapView(v57, "08-widget-5x7")
         // the tile deep-links into a lesson for that topic
         val i = TopicsWidget.items(ctx, 4)[0]
         assertEquals(TopicsWidget.EXTRA_TOPIC, i.extraKey)
