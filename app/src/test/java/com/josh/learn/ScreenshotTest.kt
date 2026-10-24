@@ -144,4 +144,17 @@ class ScreenshotTest {
         Topics.clearImported(ctx)
         assertTrue(!f.exists() && Topics.suggested(ctx).isEmpty())
     }
+
+    @Test fun noKeyShowsAddKeyPromptInsteadOfCalling() {
+        LocalModels.abiOverride = false // no offline fallback on this "phone"
+        try {
+            val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+            assertEquals(Provider.GEMINI, a.providers.active)
+            assertTrue(a.requireProvider() == null)
+            idle()
+            val d = a.lastKeyPrompt!!
+            assertTrue(d.isShowing)
+            assertEquals("Get a free key", d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).text.toString())
+        } finally { LocalModels.abiOverride = true }
+    }
 }

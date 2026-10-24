@@ -9,7 +9,7 @@ enum class Provider(val label: String, val short: String, val defaultBaseUrl: St
     /** On-device model via LiteRT-LM: no key, works offline. */
     LOCAL("Offline (on this phone)", "Offline", "local", "", "No key needed: downloads a model once, then works offline", ""),
     GEMINI("Google Gemini", "Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash",
-        "Free key: aistudio.google.com/app/apikey (starts with AIza)", "https://aistudio.google.com/app/apikey"),
+        "Free key: aistudio.google.com/apikey (starts with AIza)", "https://aistudio.google.com/apikey"),
     XAI("xAI Grok", "Grok", "https://api.x.ai/v1", "grok-4.7",
         "Key from console.x.ai (starts with xai-)", "https://console.x.ai"),
     CLAUDE("Anthropic Claude", "Claude", "https://api.anthropic.com/v1", "claude-sonnet-5-5",
@@ -27,7 +27,7 @@ enum class Provider(val label: String, val short: String, val defaultBaseUrl: St
     }
 
     val suggestions: List<String> get() = when (this) {
-        GEMINI -> listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash")
+        GEMINI -> listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash")
         XAI -> listOf("grok-4.7", "latest")
         OPENAI -> listOf("gpt-5-mini", "gpt-5", "gpt-5-nano")
         CLAUDE -> listOf("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")

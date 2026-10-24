@@ -255,13 +255,23 @@ open class BaseActivity : AppCompatActivity() {
         }
         val other = providers.ready().firstOrNull()
         if (other != null && p == providers.active) { providers.active = other; onProviderChanged(); return providers.config(other) }
-        MaterialAlertDialogBuilder(this).setTitle("${p.label} isn't set up")
-            .setMessage(if (Features.OFFLINE_AI) "Add an API key for ${p.label} in Settings, or use the Offline AI." else "Add an API key for ${p.label} in Settings. Google Gemini has a free tier.")
-            .setNegativeButton(android.R.string.cancel, null)
-            .apply { if (Features.OFFLINE_AI) setNeutralButton("Use Offline") { _, _ -> providers.active = Provider.LOCAL; onProviderChanged(); requireProvider() } }
-            .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }.show()
+        showAddKeyPrompt(p)
         return null
     }
+
+    /** "Add your <provider> key": Get-a-key link + Settings (+ Use Offline when possible). Shown instead of ever calling without a key. */
+    fun showAddKeyPrompt(p: Provider) {
+        val b = MaterialAlertDialogBuilder(this).setTitle("Add your ${p.short} key")
+            .setMessage((if (p == Provider.GEMINI) "Gemini needs a free API key from Google AI Studio. Create one, then paste it in Settings → Google Gemini."
+                else "${p.label} needs an API key. Add it in Settings.") +
+                (if (Features.OFFLINE_AI && LocalModels.supported(this)) "\n\nOr use the Offline AI: no key needed." else ""))
+            .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }
+        if (p.keyUrl.isNotEmpty()) b.setNeutralButton(if (p == Provider.GEMINI) "Get a free key" else "Get a key") { _, _ -> openUrl(p.keyUrl) }
+        if (Features.OFFLINE_AI && LocalModels.supported(this)) b.setNegativeButton("Use Offline") { _, _ -> providers.active = Provider.LOCAL; onProviderChanged(); requireProvider() }
+        else b.setNegativeButton(android.R.string.cancel, null)
+        lastKeyPrompt = b.show()
+    }
+    var lastKeyPrompt: AlertDialog? = null
 
     /**
      * Runs [task] off the main thread with a progress dialog (shows streamed character count),
@@ -301,7 +311,15 @@ open class BaseActivity : AppCompatActivity() {
                 if (dlg.isShowing) dlg.dismiss()
                 if (cancelled) return@post
                 r.onSuccess(onSuccess)
-                r.onFailure { e -> showAiError(e, cfg.provider) { p -> runAi(status, p, task, onSuccess) } }
+                r.onFailure { e ->
+                    val ae = e as? AiException
+                    if (ae?.kind == AiException.Kind.NO_KEY) { showAddKeyPrompt(cfg.provider); return@onFailure }
+                    if (ae?.transient == true && cfg.provider != Provider.LOCAL && providers.isReady(Provider.LOCAL)) {
+                        toast("${cfg.provider.short} is busy, using the Offline AI instead")
+                        runAi(status, Provider.LOCAL, task, onSuccess); return@onFailure
+                    }
+                    showAiError(e, cfg.provider) { p -> runAi(status, p, task, onSuccess) }
+                }
             }
         }
     }

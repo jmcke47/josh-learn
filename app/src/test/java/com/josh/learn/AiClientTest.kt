@@ -20,6 +20,10 @@ class AiClientTest {
     private var lastRequest = ""
     private var lastPath = ""
     private var lastHeaders = mapOf<String, String>()
+    private val statusQueue = ArrayDeque<Int>()
+    private val models = mutableListOf<String>()
+    private var calls = 0
+    private val slept = mutableListOf<Long>()
 
     @Before fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -28,12 +32,21 @@ class AiClientTest {
             lastHeaders = ex.requestHeaders.mapValues { it.value.firstOrNull() ?: "" }.mapKeys { it.key.lowercase() }
             lastAuth = ex.requestHeaders.getFirst("Authorization")
             lastRequest = ex.requestBody.bufferedReader().readText()
+            calls++
+            Regex("\"model\":\"([^\"]+)\"").find(lastRequest)?.let { models += it.groupValues[1] }
+            val st = statusQueue.removeFirstOrNull() ?: status
+            if (st != 200) {
+                val eb = body.toByteArray(); ex.responseHeaders.add("Content-Type", "application/json")
+                headers.forEach { (k, v) -> ex.responseHeaders.add(k, v) }
+                ex.sendResponseHeaders(st, eb.size.toLong()); ex.responseBody.use { it.write(eb) }; return@createContext
+            }
             ex.responseHeaders.add("Content-Type", contentType)
             headers.forEach { (k, v) -> ex.responseHeaders.add(k, v) }
             val b = body.toByteArray()
             ex.sendResponseHeaders(status, b.size.toLong()); ex.responseBody.use { it.write(b) }
         }
         server.start()
+        AiClient.sleeper = { slept += it }
     }
     @After fun stop() = server.stop(0)
 
@@ -84,7 +97,7 @@ class AiClientTest {
         try { AiClient.complete(cfg(), listOf(Msg("user", "hi"))); fail() } catch (e: AiException) { assertEquals(AiException.Kind.BAD_MODEL, e.kind) }
         status = 401; body = """{"error":{"message":"Incorrect API key"}}"""
         try { AiClient.complete(cfg(Provider.XAI), listOf(Msg("user", "hi"))); fail() } catch (e: AiException) {
-            assertEquals(AiException.Kind.AUTH, e.kind); assertTrue(e.message!!.startsWith("Grok"))
+            assertEquals(AiException.Kind.AUTH, e.kind); assertTrue(e.message!!.startsWith("Your Grok key isn't working"))
         }
     }
 
@@ -141,5 +154,56 @@ class AiClientTest {
         assertEquals(null, AiClient.parseSseLine(": keep-alive"))
         assertEquals("", AiClient.parseSseLine("data: {\"choices\":[{\"delta\":{\"content\":null}}]}"))
         assertEquals("x", AiClient.parseSseLine("data:{\"choices\":[{\"delta\":{\"content\":\"x\"}}]}"))
+    }
+
+    private val okStream = listOf("""{"choices":[{"delta":{"content":"OK"}}]}""", "[DONE]").joinToString("\n\n") { "data: $it" } + "\n\n"
+
+    @Test fun neverCallsWithoutKey() {
+        val r = runCatching { AiClient.complete(cfg().copy(apiKey = "  "), listOf(Msg("user", "hi"))) }
+        assertEquals(AiException.Kind.NO_KEY, (r.exceptionOrNull() as AiException).kind)
+        assertEquals(0, calls)
+    }
+
+    @Test fun retries503WithBackoffThenSucceeds() {
+        statusQueue.addAll(listOf(503, 503)); body = okStream
+        val status = mutableListOf<String>()
+        val out = AiClient.complete(cfg(), listOf(Msg("user", "hi")), { if (it.startsWith(AiClient.STATUS)) status += it.substring(1) })
+        assertEquals("OK", out); assertEquals(3, calls)
+        assertEquals(4_000L, slept.sum()) // 1 s + 3 s
+        assertTrue(status.all { it == "Gemini is busy, retrying…" })
+        assertEquals(listOf("gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.8-flash"), models)
+    }
+
+    @Test fun fallsBackToLighterGeminiModel() {
+        statusQueue.addAll(listOf(503, 503, 503, 503)); body = okStream
+        val out = AiClient.complete(cfg(), listOf(Msg("user", "hi")), {})
+        assertEquals("OK", out)
+        assertEquals(listOf("gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"), models)
+        assertEquals(11_000L, slept.sum()) // 1 + 3 + 7 s
+    }
+
+    @Test fun throwsTransientAfterEverythingFails() {
+        status = 503; body = """{"error":{"message":"overloaded"}}"""
+        val e = runCatching { AiClient.complete(cfg(), listOf(Msg("user", "hi"))) }.exceptionOrNull() as AiException
+        assertTrue(e.transient); assertEquals(503, e.httpCode)
+        assertEquals(4 + 2 + 2, calls) // main model x4, each lighter model x2
+    }
+
+    @Test fun badKeyIsNotRetried() {
+        for ((code, err) in listOf(400 to """{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}""",
+                                   401 to """{"error":{"message":"unauthorized"}}""", 403 to """{"error":{"message":"forbidden"}}""")) {
+            calls = 0; status = code; body = err
+            val e = runCatching { AiClient.complete(cfg(), listOf(Msg("user", "hi"))) }.exceptionOrNull() as AiException
+            assertEquals(AiException.Kind.AUTH, e.kind); assertFalse(e.transient)
+            assertTrue(e.message!!.startsWith("Your Gemini key isn't working"))
+            assertEquals(1, calls)
+        }
+    }
+
+    @Test fun nonGeminiProvidersRetryButDontSwapModels() {
+        statusQueue.addAll(listOf(502)); body = okStream
+        assertEquals("OK", AiClient.complete(cfg(Provider.XAI).copy(model = "grok-4.7"), listOf(Msg("user", "hi")), {}))
+        assertEquals(listOf("grok-4.7", "grok-4.7"), models)
+        assertTrue(AiClient.fallbackModels(cfg(Provider.XAI)).isEmpty())
     }
 }

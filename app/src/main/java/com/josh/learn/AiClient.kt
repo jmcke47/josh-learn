@@ -16,6 +16,9 @@ class AiException(val kind: Kind, message: String, val httpCode: Int = 0, val re
     enum class Kind { NO_KEY, AUTH, RATE_LIMIT, QUOTA, BAD_MODEL, BAD_REQUEST, SERVER, NETWORK, PARSE, CANCELLED, LOCAL, OTHER }
     /** Worth trying another provider for. */
     val providerProblem get() = kind in setOf(Kind.AUTH, Kind.RATE_LIMIT, Kind.QUOTA, Kind.BAD_MODEL, Kind.SERVER, Kind.NO_KEY, Kind.LOCAL)
+    /** Temporary server-side trouble (429/5xx/timeout): worth retrying, a lighter model, or the offline model. Never key/auth problems. */
+    val transient get() = kind != Kind.AUTH && kind != Kind.NO_KEY && kind != Kind.CANCELLED &&
+        (httpCode in AiClient.RETRY_CODES || kind == Kind.SERVER || kind == Kind.QUOTA || kind == Kind.RATE_LIMIT || cause is java.net.SocketTimeoutException)
 }
 
 /**
@@ -32,12 +35,56 @@ object AiClient {
     /** On-device generation hook (LocalLlm), installed by LearnApp. */
     @Volatile var localBackend: ((ProviderConfig, List<Msg>, ((String) -> Unit)?, () -> Boolean) -> String)? = null
 
+    val RETRY_CODES = setOf(429, 500, 502, 503, 504, 529)
+    /** Backoff between retries of the same model (ms). */
+    var retryDelaysMs = listOf(1_000L, 3_000L, 7_000L)
+    /** Test hook. */
+    var sleeper: (Long) -> Unit = { Thread.sleep(it) }
+
+    /** Lighter Gemini models to try when the chosen one keeps failing with 429/5xx (current stable ids, Oct 2026). */
+    val GEMINI_FALLBACKS = listOf("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+    fun fallbackModels(cfg: ProviderConfig): List<String> =
+        if (cfg.provider == Provider.GEMINI) GEMINI_FALLBACKS.filter { !it.equals(cfg.model, ignoreCase = true) } else emptyList()
+
+    private fun pause(ms: Long, isCancelled: () -> Boolean) {
+        var left = ms
+        while (left > 0) { if (isCancelled()) throw AiException(AiException.Kind.CANCELLED, "Cancelled"); val s = minOf(left, 100L); sleeper(s); left -= s }
+    }
+
+    /**
+     * Cloud: retries transient errors (429/5xx/timeouts) with backoff, then (Gemini) falls back to lighter models.
+     * Throws the last error if everything fails. Key/auth/bad-request errors are never retried.
+     */
     fun complete(cfg: ProviderConfig, messages: List<Msg>, onDelta: ((String) -> Unit)? = null,
                  isCancelled: () -> Boolean = { false }): String {
         if (cfg.provider == Provider.LOCAL) {
             val b = localBackend ?: throw AiException(AiException.Kind.LOCAL, "Offline AI isn't available on this device.")
             return b(cfg, messages, onDelta, isCancelled)
         }
+        if (cfg.apiKey.isBlank()) throw AiException(AiException.Kind.NO_KEY, "Add your ${cfg.provider.short} key in Settings first.") // never call without a key
+        var last: AiException? = null
+        for ((i, model) in (listOf(cfg.model) + fallbackModels(cfg)).withIndex()) {
+            val c = cfg.copy(model = model)
+            if (i > 0) onDelta?.invoke(STATUS + "${cfg.provider.short} is busy, trying the lighter $model…")
+            val delays = if (i == 0) retryDelaysMs else retryDelaysMs.take(1)
+            for (attempt in 0..delays.size) {
+                try { return completeOnce(c, messages, onDelta, isCancelled) }
+                catch (e: AiException) {
+                    last = e
+                    if (e.kind == AiException.Kind.BAD_MODEL && i > 0) break          // fallback id not available: next one
+                    if (!e.transient) throw e
+                    if (e.kind == AiException.Kind.QUOTA) break                       // daily quota: retrying won't help, try another model
+                    if (attempt == delays.size) break
+                    val wait = maxOf(delays[attempt], if (e.retryAfterSec in 1..10) e.retryAfterSec * 1000L else 0L)
+                    onDelta?.invoke(STATUS + "${cfg.provider.short} is busy, retrying…")
+                    pause(wait, isCancelled)
+                }
+            }
+        }
+        throw last ?: AiException(AiException.Kind.OTHER, "Something went wrong.")
+    }
+
+    private fun completeOnce(cfg: ProviderConfig, messages: List<Msg>, onDelta: ((String) -> Unit)?, isCancelled: () -> Boolean): String {
         val claude = cfg.provider == Provider.CLAUDE
         val stream = onDelta != null
         val body = if (claude) JSONObject().apply {
@@ -181,8 +228,9 @@ object AiClient {
         val low = (msg + " " + body).lowercase()
         val wait = retryDelaySeconds(body, retryAfter)
         return when {
-            code == 401 || code == 403 || (code == 400 && (low.contains("api key") || low.contains("api_key"))) ->
-                AiException(AiException.Kind.AUTH, "${p.short} rejected the API key. Check it in Settings. ($msg)", code)
+            code == 401 || code == 403 || (code == 400 && (low.contains("api key") || low.contains("api_key") || low.contains("api_key_invalid"))) ->
+                AiException(AiException.Kind.AUTH, "Your ${p.short} key isn't working. Check it in Settings, or create a new one" +
+                    (if (p == Provider.GEMINI) " at aistudio.google.com/apikey" else "") + ". ($msg)", code)
             (code == 429 || code == 400 || code == 402) && (low.contains("insufficient_quota") || low.contains("billing") || low.contains("per day") ||
                 low.contains("perday") || low.contains("credits") || low.contains("credit balance")) ->
                 AiException(AiException.Kind.QUOTA, "${p.short} quota used up" +
