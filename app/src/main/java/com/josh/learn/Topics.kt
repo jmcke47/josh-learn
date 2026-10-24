@@ -30,7 +30,8 @@ object Topics {
             "History of rock music", "Poetry basics", "Architecture styles", "How to read sheet music", "Storytelling structure", "Graphic design basics", "Classical composers")),
     )
 
-    // ---- "Suggested for you": bundled asset suggested_topics.json {topics:[{title,category,emoji,priority,subtopics[]}]}
+    // ---- "Suggested for you": topics the user imports from a JSON file {topics:[{title,category,emoji,priority,subtopics[]}]}.
+    // Nothing is bundled in the APK; the import is saved privately in filesDir (kept across app updates).
     data class Suggested(val title: String, val category: String, val emoji: String, val priority: Int, val subtopics: List<String>) {
         /** As a tile category (id prefixed "s:") so the sub-topic sheet, paths and lesson emoji all work. */
         val asCategory get() = Category("s:" + title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-'), title, emoji, subtopics.ifEmpty { listOf(title) })
@@ -49,9 +50,26 @@ object Topics {
         }.distinctBy { it.title.lowercase() }.sortedByDescending { it.priority }
     }.getOrDefault(emptyList())
 
+    fun importedFile(c: Context) = java.io.File(c.applicationContext.filesDir, "suggested_topics.json")
+
     fun suggested(c: Context): List<Suggested> = suggestedCache ?: runCatching {
-        c.applicationContext.assets.open("suggested_topics.json").bufferedReader().use { it.readText() }
-    }.map { parseSuggested(it) }.getOrDefault(emptyList()).also { suggestedCache = it }
+        importedFile(c).takeIf { it.exists() }?.readText()?.let { parseSuggested(it) } ?: emptyList()
+    }.getOrDefault(emptyList()).also { suggestedCache = it }
+
+    const val MAX_IMPORT_BYTES = 1_000_000
+
+    /** Parses [json] leniently and saves it privately. Returns the number of topics, or throws with a friendly message. */
+    fun importJson(c: Context, json: String): Int {
+        if (json.length > MAX_IMPORT_BYTES) throw IllegalArgumentException("That file is too big for a topics list.")
+        val parsed = parseSuggested(json)
+        if (parsed.isEmpty()) throw IllegalArgumentException("No topics found. The file should look like {\"topics\":[{\"title\":…,\"subtopics\":[…]}]}.")
+        val f = importedFile(c); val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(json); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        suggestedCache = null; init(c)
+        return parsed.size
+    }
+
+    fun clearImported(c: Context) { importedFile(c).delete(); suggestedCache = null; init(c) }
 
     private var suggestedCats: List<Category> = emptyList()
     fun init(c: Context) { suggestedCats = suggested(c).map { it.asCategory } }

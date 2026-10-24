@@ -1,6 +1,6 @@
 package com.josh.learn
 
-/** Release feature flags. Offline AI (LiteRT-LM) is held back for v1.2.0 (branch v1.2-offline-ai). */
+/** Release feature flags. */
 object Features {
-    const val OFFLINE_AI = false
+    const val OFFLINE_AI = true
 }

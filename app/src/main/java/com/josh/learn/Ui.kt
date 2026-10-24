@@ -128,6 +128,27 @@ open class BaseActivity : AppCompatActivity() {
     protected val main = Handler(Looper.getMainLooper())
     private var providerItem: MenuItem? = null
 
+    /** "Import my topics": system file picker -> lenient parse -> saved privately in filesDir. */
+    private val topicsPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        io.execute {
+            val r = runCatching {
+                val text = contentResolver.openInputStream(uri)?.use { s ->
+                    val b = s.readNBytesCompat(Topics.MAX_IMPORT_BYTES + 1); String(b, Charsets.UTF_8)
+                } ?: throw IllegalArgumentException("Couldn't open that file.")
+                Topics.importJson(this, text)
+            }
+            main.post {
+                r.onSuccess { n -> toast("Imported $n topics"); onTopicsChanged() }
+                r.onFailure { e -> MaterialAlertDialogBuilder(this).setTitle("Couldn't import topics")
+                    .setMessage(e.message ?: "That file isn't a topics list.").setPositiveButton(android.R.string.ok, null).show() }
+            }
+        }
+    }
+    fun importTopics() = runCatching { topicsPicker.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        .onFailure { toast("No file picker available on this phone") }
+    open fun onTopicsChanged() {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -194,7 +215,10 @@ open class BaseActivity : AppCompatActivity() {
             .setSingleChoiceItems(labels, all.indexOf(providers.active)) { d, i ->
                 val p = all[i]
                 d.dismiss()
-                if (p == Provider.LOCAL && !providers.isReady(p)) { providers.active = p; onProviderChanged(); OfflineSetup.show(this) }
+                if (p == Provider.LOCAL && !LocalModels.supported(this)) {
+                    MaterialAlertDialogBuilder(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
+                        .setPositiveButton(android.R.string.ok, null).show()
+                } else if (p == Provider.LOCAL && !providers.isReady(p)) { providers.active = p; onProviderChanged(); OfflineSetup.show(this) }
                 else if (!providers.isReady(p)) {
                     MaterialAlertDialogBuilder(this).setTitle("${p.label} isn't set up")
                         .setMessage("Add an API key for ${p.label} in Settings first.")
@@ -212,6 +236,14 @@ open class BaseActivity : AppCompatActivity() {
     /** Active provider config, or prompts setup and returns null. */
     fun requireProvider(p: Provider = providers.active): ProviderConfig? {
         providers.config(p)?.let { return it }
+        if (p == Provider.LOCAL && !LocalModels.supported(this)) {
+            val other = providers.ready().firstOrNull { it != Provider.LOCAL }
+            if (other != null) { toast("Offline AI can't run here; using ${other.short}"); providers.active = other; onProviderChanged(); return providers.config(other) }
+            MaterialAlertDialogBuilder(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }.show()
+            return null
+        }
         if (p == Provider.LOCAL) {
             val st = ModelDownloader.state
             if (st.active) { toast("The offline AI is still downloading (${st.percent}%). It'll be ready soon."); return null }
@@ -373,3 +405,9 @@ object KeyTester {
 }
 
 fun ViewGroup.addAll(vararg v: View) = v.forEach { addView(it) }
+
+private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(16 * 1024); var total = 0
+    while (total < max) { val n = read(buf, 0, minOf(buf.size, max - total)); if (n < 0) break; out.write(buf, 0, n); total += n }
+    return out.toByteArray()
+}

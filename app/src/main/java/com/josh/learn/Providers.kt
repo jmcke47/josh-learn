@@ -44,7 +44,19 @@ class ProviderStore(context: Context) {
     private val secrets = SecretBox(context)
 
     var active: Provider
-        get() = runCatching { Provider.valueOf(prefs.getString("active", Provider.default.name)!!) }.getOrDefault(Provider.default).takeIf { it in Provider.visible } ?: Provider.default
+        get() {
+            val stored = prefs.getString("active", null)?.let { runCatching { Provider.valueOf(it) }.getOrNull() }?.takeIf { it in Provider.visible }
+            val localOk = Features.OFFLINE_AI && LocalModels.supported(ctx)
+            val cloud = Provider.entries.firstOrNull { it != Provider.LOCAL && isReady(it) }
+            return when {
+                stored == Provider.LOCAL && !localOk -> cloud ?: Provider.GEMINI // phone can't run it: fall back
+                stored != null -> stored
+                localOk && LocalModels.usable(ctx) != null -> Provider.LOCAL     // offline is the default once downloaded
+                cloud != null -> cloud
+                localOk -> Provider.LOCAL
+                else -> Provider.GEMINI
+            }
+        }
         set(v) = prefs.edit { putString("active", v.name) }
 
     fun model(p: Provider): String = if (p == Provider.LOCAL) (LocalModels.usable(ctx) ?: LocalModels.selected(ctx)).short else prefs.getString("model_${p.name}", null)?.trim()?.ifEmpty { null } ?: p.defaultModel
@@ -58,7 +70,7 @@ class ProviderStore(context: Context) {
     fun setKey(p: Provider, key: String?) = secrets.put("key_${p.name}", key?.trim()?.replace(Regex("\\s"), ""))
     fun hasKey(p: Provider) = !key(p).isNullOrEmpty()
 
-    fun isReady(p: Provider) = if (p == Provider.LOCAL) Features.OFFLINE_AI && LocalModels.usable(ctx) != null else hasKey(p) && model(p).isNotEmpty() && baseUrl(p).startsWith("http")
+    fun isReady(p: Provider) = if (p == Provider.LOCAL) Features.OFFLINE_AI && LocalModels.supported(ctx) && LocalModels.usable(ctx) != null else hasKey(p) && model(p).isNotEmpty() && baseUrl(p).startsWith("http")
 
     /** Providers that are fully set up, active one first. */
     fun ready(): List<Provider> = Provider.entries.filter { isReady(it) }.sortedBy { if (it == active) 0 else 1 }

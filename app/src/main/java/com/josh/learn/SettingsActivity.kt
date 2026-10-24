@@ -45,6 +45,11 @@ class SettingsActivity : BaseActivity() {
     private fun offlineCard() = card {
         val st = ModelDownloader.state
         addView(label("Offline AI (on this phone)" + if (providers.active == Provider.LOCAL) "  ✓ active" else "", bold = true))
+        LocalModels.unsupportedReason(context)?.let { reason ->
+            addView(muted("⚠ $reason", top = 4))
+            if (LocalModels.loadCrashed(context)) addView(textBtn("Try Offline AI again") { LocalModels.clearLoadCrashed(context); render() })
+            return@card
+        }
         addView(muted("Runs on your phone with no key and no internet. Answers are simpler than online AI and can be wrong. " +
             "Models are kept when the app updates. Phone RAM: %.1f GB · free storage: %.1f GB".format(LocalModels.totalRamGb(context), LocalModels.freeBytes(context) / 1e9), top = 4))
         val selected = LocalModels.selected(context)
@@ -99,6 +104,7 @@ class SettingsActivity : BaseActivity() {
         if (providers.active != Provider.LOCAL && LocalModels.usable(context) != null) addView(textBtn("Make active") { providers.active = Provider.LOCAL; onProviderChanged() })
     }
     override fun onProviderChanged() { super.onProviderChanged(); render() }
+    override fun onTopicsChanged() = render()
 
     private fun render() {
         root.removeAllViews()
@@ -113,9 +119,9 @@ class SettingsActivity : BaseActivity() {
                     addView(Chip(context, null, com.google.android.material.R.attr.chipStyle).apply {
                         id = View.generateViewId(); isCheckable = true
                         text = p.short + if (providers.isReady(p)) "" else " (not set up)"
-                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || p == Provider.LOCAL
+                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || (p == Provider.LOCAL && LocalModels.supported(context))
                         setOnClickListener {
-                            if (providers.isReady(p) || p == Provider.LOCAL) { providers.active = p; onProviderChanged(); toast("Now using ${p.label}") }
+                            if (providers.isReady(p) || (p == Provider.LOCAL && LocalModels.supported(context))) { providers.active = p; onProviderChanged(); toast("Now using ${p.label}") }
                         }
                     })
                 }
@@ -124,6 +130,20 @@ class SettingsActivity : BaseActivity() {
             addView(title("Online providers (optional)"))
             addView(muted("Better answers, but need your own API key and internet. Each key is stored encrypted."))
             Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }
+
+            // ---------------- Suggested topics (imported)
+            addView(title("Suggested topics"))
+            val n = Topics.suggested(context).size
+            addView(muted(if (n > 0) "$n imported topics shown in \"Suggested for you\". Stored privately on this phone." else "Import a topics file (JSON) to fill \"Suggested for you\". It stays on this phone."))
+            addView(hbox {
+                addView(outlined(if (n > 0) "Import new file" else "Import my topics") { importTopics() })
+                if (n > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Clear imported topics") {
+                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Clear imported topics?")
+                        .setMessage("Removes your suggested topics from this phone. Lessons you made stay.")
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton("Clear") { _, _ -> Topics.clearImported(context); render() }.show()
+                }) }
+            })
 
             // ---------------- Interests
             addView(title("Your interests"))

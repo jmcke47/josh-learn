@@ -42,7 +42,7 @@ class MainActivity : BaseActivity() {
         if (savedInstanceState == null) {
             updater.quietCheck { m -> pendingUpdate = m; render() }
             val prefs = LearnApp.prefs(this)
-            if (Features.OFFLINE_AI && providers.ready().isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
+            if (Features.OFFLINE_AI && LocalModels.supported(this) && LocalModels.installed(this).isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
                 prefs.edit().putBoolean("offline_setup_shown", true).apply()
                 OfflineSetup.show(this) { render() }
             }
@@ -97,6 +97,8 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    override fun onTopicsChanged() { if (::content.isInitialized) render() }
+
     override fun onProviderChanged() { super.onProviderChanged(); if (::content.isInitialized) render() }
 
     private fun startTopic(topic: String, cat: Topics.Category?) =
@@ -109,9 +111,10 @@ class MainActivity : BaseActivity() {
                 addView(muted("Tap to download and install"))
             })
         }
-        if (!Features.OFFLINE_AI && providers.ready().isEmpty()) {
+        if (providers.active != Provider.LOCAL && providers.ready().isEmpty()) {
             addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }) {
                 addView(label("✨ Set up AI", bold = true))
+                LocalModels.unsupportedReason(context)?.takeIf { Features.OFFLINE_AI }?.let { addView(muted(it)) }
                 addView(muted("Add a free Google Gemini key in Settings (takes a minute). Grok, ChatGPT and Claude work too. Tap to open Settings."))
             })
         }
@@ -184,7 +187,19 @@ class MainActivity : BaseActivity() {
     private fun LinearLayout.suggestedRow() {
         val sugg = Topics.suggested(context)
         addView(title("Suggested for you", top = 0))
-        if (sugg.isNotEmpty()) {
+        if (sugg.isEmpty()) {
+            addView(card(top = 4) {
+                addView(muted("Import a topics file (JSON) to get personal picks here. It stays private on this phone."))
+                addView(outlined("Import my topics") { importTopics() })
+            })
+            if (Topics.interests(context).isNotEmpty()) addView(row(Topics.suggestions(context).map { (t, cat) ->
+                card(top = 0, onClick = { startTopic(t, cat) }) {
+                    addView(label(cat?.emoji ?: "⭐").apply { textSize = 22f })
+                    addView(label(t, bold = true).apply { maxLines = 2 })
+                    addView(muted(cat?.name ?: "From your interests").apply { textSize = 12f })
+                }
+            }))
+        } else {
             addView(row(sugg.map { s ->
                 val cat = s.asCategory
                 card(top = 0, onClick = { startTopic(Topics.pick(cat), cat) }) {
@@ -192,14 +207,6 @@ class MainActivity : BaseActivity() {
                     addView(label(s.title, bold = true).apply { maxLines = 2 })
                     addView(muted(s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.category).apply { textSize = 12f; maxLines = 2 })
                 }.apply { setOnLongClickListener { subtopicSheet(cat); true }; contentDescription = s.title }
-            }))
-        } else {
-            addView(row(Topics.suggestions(context).map { (t, cat) ->
-                card(top = 0, onClick = { startTopic(t, cat) }) {
-                    addView(label(cat?.emoji ?: "⭐").apply { textSize = 22f })
-                    addView(label(t, bold = true).apply { maxLines = 2 })
-                    addView(muted(cat?.name ?: "From your interests").apply { textSize = 12f })
-                }
             }))
         }
         addView(View(context), LinearLayout.LayoutParams(1, dp(12)))

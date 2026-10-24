@@ -53,6 +53,7 @@ object ModelDownloader {
     fun start(c: Context, m: LocalModel): String? {
         if (state.active) return if (state.model == m) null else "Another model is downloading. Cancel it first."
         if (LocalModels.isInstalled(c, m)) return null
+        LocalModels.unsupportedReason(c)?.let { return it }
         if (!LocalModels.hasSpace(c, m)) return "Not enough free storage: need %.1f GB, have %.1f GB.".format(LocalModels.needBytes(c, m) / 1e9, LocalModels.freeBytes(c) / 1e9)
         if (LocalModels.wifiOnly(c) && isMetered(c)) return "You're not on Wi-Fi. Connect to Wi-Fi, or turn off \"Wi-Fi only\" to use mobile data (${m.sizeText})."
         cancelRequested = false

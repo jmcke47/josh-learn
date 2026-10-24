@@ -65,7 +65,25 @@ object LocalModels {
 
     fun totalRamGb(c: Context): Double = runCatching {
         val mi = ActivityManager.MemoryInfo(); c.getSystemService(ActivityManager::class.java).getMemoryInfo(mi); mi.totalMem / 1e9
-    }.getOrDefault(8.0)
+    }.getOrNull()?.takeIf { it > 0.1 } ?: 8.0 // unknown -> don't block
+
+    // ---- device support / graceful degradation
+    /** Test hook; null = detect. */
+    @Volatile var abiOverride: Boolean? = null
+    fun abiSupported(): Boolean = abiOverride ?: (android.os.Build.SUPPORTED_ABIS?.contains("arm64-v8a") == true)
+    const val MIN_RAM_GB = 2.5
+    fun loadCrashed(c: Context) = prefs(c).getBoolean("llm_load_crashed", false)
+    fun clearLoadCrashed(c: Context) = prefs(c).edit { putBoolean("llm_load_crashed", false) }
+
+    /** Why Offline AI can't be used on this phone, or null if it can. */
+    fun unsupportedReason(c: Context): String? = when {
+        !Features.OFFLINE_AI -> "Offline AI isn't available in this version."
+        !abiSupported() -> "Offline AI needs a 64-bit ARM phone, and this one isn't. Use Google Gemini (free key) or another online provider instead."
+        totalRamGb(c) < MIN_RAM_GB -> "This phone has %.1f GB RAM; Offline AI needs about 3 GB or more. Use Google Gemini (free key) or another online provider instead.".format(totalRamGb(c))
+        loadCrashed(c) -> "Offline AI closed unexpectedly while loading last time, so it's switched off to keep the app stable. You can try again, or use an online provider."
+        else -> null
+    }
+    fun supported(c: Context) = unsupportedReason(c) == null
 
     /** User-initiated only. Also removes any partial download. */
     fun delete(c: Context, m: LocalModel) {

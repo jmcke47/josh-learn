@@ -10,3 +10,5 @@ release/
 keystore.properties
 version.properties.bak
 screenshots/
+suggested_topics.json
+app/src/main/assets/suggested_topics.json
