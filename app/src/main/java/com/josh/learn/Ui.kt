@@ -180,7 +180,7 @@ open class BaseActivity : AppCompatActivity() {
     open fun onProviderChanged() { providerItem?.title = providerTitle() }
 
     fun showProviderSwitcher() {
-        val all = Provider.entries
+        val all = Provider.visible
         val labels = all.map { p ->
             val state = when {
                 providers.isReady(p) -> providers.model(p)
@@ -224,9 +224,9 @@ open class BaseActivity : AppCompatActivity() {
         val other = providers.ready().firstOrNull()
         if (other != null && p == providers.active) { providers.active = other; onProviderChanged(); return providers.config(other) }
         MaterialAlertDialogBuilder(this).setTitle("${p.label} isn't set up")
-            .setMessage("Add an API key for ${p.label} in Settings, or use the Offline AI.")
+            .setMessage(if (Features.OFFLINE_AI) "Add an API key for ${p.label} in Settings, or use the Offline AI." else "Add an API key for ${p.label} in Settings. Google Gemini has a free tier.")
             .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton("Use Offline") { _, _ -> providers.active = Provider.LOCAL; onProviderChanged(); requireProvider() }
+            .apply { if (Features.OFFLINE_AI) setNeutralButton("Use Offline") { _, _ -> providers.active = Provider.LOCAL; onProviderChanged(); requireProvider() } }
             .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }.show()
         return null
     }

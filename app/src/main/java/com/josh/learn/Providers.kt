@@ -20,6 +20,12 @@ enum class Provider(val label: String, val short: String, val defaultBaseUrl: St
         "Any server with an OpenAI-compatible /chat/completions endpoint", "");
 
     /** Suggested models shown in Settings (user can type anything). */
+    companion object {
+        /** Providers offered in the UI (Offline only when the feature is enabled). */
+        val visible: List<Provider> get() = entries.filter { Features.OFFLINE_AI || it != LOCAL }
+        val default: Provider get() = if (Features.OFFLINE_AI) LOCAL else GEMINI
+    }
+
     val suggestions: List<String> get() = when (this) {
         GEMINI -> listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash")
         XAI -> listOf("grok-4.7", "latest")
@@ -38,7 +44,7 @@ class ProviderStore(context: Context) {
     private val secrets = SecretBox(context)
 
     var active: Provider
-        get() = runCatching { Provider.valueOf(prefs.getString("active", Provider.LOCAL.name)!!) }.getOrDefault(Provider.LOCAL)
+        get() = runCatching { Provider.valueOf(prefs.getString("active", Provider.default.name)!!) }.getOrDefault(Provider.default).takeIf { it in Provider.visible } ?: Provider.default
         set(v) = prefs.edit { putString("active", v.name) }
 
     fun model(p: Provider): String = if (p == Provider.LOCAL) (LocalModels.usable(ctx) ?: LocalModels.selected(ctx)).short else prefs.getString("model_${p.name}", null)?.trim()?.ifEmpty { null } ?: p.defaultModel
@@ -52,7 +58,7 @@ class ProviderStore(context: Context) {
     fun setKey(p: Provider, key: String?) = secrets.put("key_${p.name}", key?.trim()?.replace(Regex("\\s"), ""))
     fun hasKey(p: Provider) = !key(p).isNullOrEmpty()
 
-    fun isReady(p: Provider) = if (p == Provider.LOCAL) LocalModels.usable(ctx) != null else hasKey(p) && model(p).isNotEmpty() && baseUrl(p).startsWith("http")
+    fun isReady(p: Provider) = if (p == Provider.LOCAL) Features.OFFLINE_AI && LocalModels.usable(ctx) != null else hasKey(p) && model(p).isNotEmpty() && baseUrl(p).startsWith("http")
 
     /** Providers that are fully set up, active one first. */
     fun ready(): List<Provider> = Provider.entries.filter { isReady(it) }.sortedBy { if (it == active) 0 else 1 }

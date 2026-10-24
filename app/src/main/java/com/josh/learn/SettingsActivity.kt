@@ -109,7 +109,7 @@ class SettingsActivity : BaseActivity() {
             addView(muted("The active provider is used for lessons, quizzes and chat. Switch any time with the ▾ button in the toolbar. If one fails, you'll get a \"Retry with…\" option."))
             addView(ChipGroup(context).apply {
                 isSingleSelection = true
-                Provider.entries.forEach { p ->
+                Provider.visible.forEach { p ->
                     addView(Chip(context, null, com.google.android.material.R.attr.chipStyle).apply {
                         id = View.generateViewId(); isCheckable = true
                         text = p.short + if (providers.isReady(p)) "" else " (not set up)"
@@ -120,7 +120,7 @@ class SettingsActivity : BaseActivity() {
                     })
                 }
             })
-            addView(offlineCard())
+            if (Features.OFFLINE_AI) addView(offlineCard())
             addView(title("Online providers (optional)"))
             addView(muted("Better answers, but need your own API key and internet. Each key is stored encrypted."))
             Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }

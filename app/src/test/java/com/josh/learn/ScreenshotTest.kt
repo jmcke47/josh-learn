@@ -60,7 +60,8 @@ class ScreenshotTest {
         assertTrue(t.contains("Suggested for you"))
         assertTrue(t.contains("4WD & Car Mechanics"))
         assertTrue(t.contains("Science") && t.contains("Custom topic"))
-        assertEquals(Provider.LOCAL, a.providers.active) // offline is the default
+        assertEquals(Provider.GEMINI, a.providers.active) // v1.1.0 default (offline AI held for v1.2.0)
+        assertTrue(t.contains("✨ Set up AI"))
         snap(a, "01-home")
     }
 
@@ -68,28 +69,8 @@ class ScreenshotTest {
         val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         idle()
         val t = texts(a.window.decorView).joinToString("\n")
-        assertTrue(t.contains("Offline AI (on this phone)"))
+        assertTrue(!t.contains("Offline AI (on this phone)") && t.contains("Gemini"))
         assertTrue(t.contains("free tier"))
         snap(a, "02-settings-providers")
-    }
-
-    @Test fun modelDownload() {
-        val m = LocalModel.FAST
-        ModelDownloader.update(ModelDownloader.State(m, ModelDownloader.Status.RUNNING, 251_000_000L, m.sizeBytes, 4_200_000L, "Downloading…"))
-        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
-        idle()
-        assertTrue(texts(a.window.decorView).any { it.startsWith("Downloading Qwen3 0.6B: 40%") })
-        snap(a, "03-model-download")
-        ModelDownloader.update(ModelDownloader.State())
-    }
-
-    @Test fun offlineSetupDialog() {
-        val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        idle()
-        OfflineSetup.show(a)
-        idle()
-        val d = org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        assertTrue(d.isShowing)
-        snapView(d.window!!.decorView, "04-offline-setup")
     }
 }

@@ -42,7 +42,7 @@ class MainActivity : BaseActivity() {
         if (savedInstanceState == null) {
             updater.quietCheck { m -> pendingUpdate = m; render() }
             val prefs = LearnApp.prefs(this)
-            if (providers.ready().isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
+            if (Features.OFFLINE_AI && providers.ready().isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
                 prefs.edit().putBoolean("offline_setup_shown", true).apply()
                 OfflineSetup.show(this) { render() }
             }
@@ -109,7 +109,13 @@ class MainActivity : BaseActivity() {
                 addView(muted("Tap to download and install"))
             })
         }
-        if (providers.active == Provider.LOCAL && LocalModels.usable(context) == null) {
+        if (!Features.OFFLINE_AI && providers.ready().isEmpty()) {
+            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }) {
+                addView(label("✨ Set up AI", bold = true))
+                addView(muted("Add a free Google Gemini key in Settings (takes a minute). Grok, ChatGPT and Claude work too. Tap to open Settings."))
+            })
+        }
+        if (Features.OFFLINE_AI && providers.active == Provider.LOCAL && LocalModels.usable(context) == null) {
             addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = {
                 val st = ModelDownloader.state
                 if (st.active) startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
