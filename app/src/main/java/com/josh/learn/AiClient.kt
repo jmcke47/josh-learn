@@ -38,6 +38,8 @@ object AiClient {
     val RETRY_CODES = setOf(429, 500, 502, 503, 504, 529)
     /** Backoff between retries of the same model (ms). */
     var retryDelaysMs = listOf(1_000L, 3_000L, 7_000L)
+    /** Model that actually answered the last cloud call on this thread (may be a lighter fallback). */
+    val lastModel = ThreadLocal<String?>()
     /** Test hook. */
     var sleeper: (Long) -> Unit = { Thread.sleep(it) }
 
@@ -68,7 +70,7 @@ object AiClient {
             if (i > 0) onDelta?.invoke(STATUS + "${cfg.provider.short} is busy, trying the lighter $model…")
             val delays = if (i == 0) retryDelaysMs else retryDelaysMs.take(1)
             for (attempt in 0..delays.size) {
-                try { return completeOnce(c, messages, onDelta, isCancelled) }
+                try { return completeOnce(c, messages, onDelta, isCancelled).also { lastModel.set(model) } }
                 catch (e: AiException) {
                     last = e
                     if (e.kind == AiException.Kind.BAD_MODEL && i > 0) break          // fallback id not available: next one

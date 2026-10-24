@@ -64,6 +64,7 @@ android {
             // ./gradlew testDebugUnitTest -PscreensDir=/path renders Robolectric screenshots there.
             it.systemProperty("screens.dir", (project.findProperty("screensDir") as String?) ?: "")
             it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            it.systemProperty("grok.zip", (project.findProperty("grokZip") as String?) ?: "")
             it.systemProperty("project.root", rootProject.projectDir.absolutePath)
         }
     }
@@ -80,6 +81,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("com.google.android.material:material:1.14.0")
+    implementation("com.google.code.gson:gson:2.14.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")

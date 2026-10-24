@@ -128,25 +128,90 @@ open class BaseActivity : AppCompatActivity() {
     protected val main = Handler(Looper.getMainLooper())
     private var providerItem: MenuItem? = null
 
-    /** "Import my topics": system file picker -> lenient parse -> saved privately in filesDir. */
+    /** "Import my topics": system file picker -> Grok export ZIP (analysed on-device, with preview) or a topics JSON. */
     private val topicsPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@registerForActivityResult
+        if (uri != null) importTopicsFrom(uri)
+    }
+    fun importTopics() = runCatching { topicsPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/json", "text/plain", "*/*")) }
+        .onFailure { toast("No file picker available on this phone") }
+
+    private sealed class ImportOutcome {
+        class Json(val text: String) : ImportOutcome()
+        class Grok(val r: GrokImport.Result) : ImportOutcome()
+    }
+
+    fun importTopicsFrom(uri: Uri) {
+        var cancelled = false
+        val tv = muted("Opening the file…").apply { setPadding(0, dp(12), 0, 0) }
+        val dlg = MaterialAlertDialogBuilder(this).setTitle("Import my topics")
+            .setView(vbox(24) { addView(com.google.android.material.progressindicator.LinearProgressIndicator(context).apply { isIndeterminate = true }); addView(tv)
+                addView(muted("Everything is analysed on this phone. Nothing is uploaded, and the chats themselves aren't kept.", top = 8).apply { textSize = 12f }) })
+            .setCancelable(false).setNegativeButton(android.R.string.cancel) { _, _ -> cancelled = true }.show()
         io.execute {
             val r = runCatching {
-                val text = contentResolver.openInputStream(uri)?.use { s ->
-                    val b = s.readNBytesCompat(Topics.MAX_IMPORT_BYTES + 1); String(b, Charsets.UTF_8)
-                } ?: throw IllegalArgumentException("Couldn't open that file.")
-                Topics.importJson(this, text)
+                (contentResolver.openInputStream(uri) ?: throw IllegalArgumentException("Couldn't open that file.")).use { raw ->
+                    val b = java.io.BufferedInputStream(raw, 1 shl 16)
+                    b.mark(8); val head = ByteArray(4); val n = b.read(head); b.reset()
+                    if (GrokImport.isZip(head.copyOf(maxOf(n, 0)))) {
+                        main.post { tv.text = "Reading your Grok history…" }
+                        ImportOutcome.Grok(GrokImport.analyseZip(b, onProgress = { c -> main.post { tv.text = "Reading your Grok history… $c chats" } }, cancelled = { cancelled }))
+                    } else {
+                        val text = String(b.readNBytesCompat(Topics.MAX_IMPORT_BYTES + 1), Charsets.UTF_8)
+                        if (Topics.parseSuggested(text).isNotEmpty()) ImportOutcome.Json(text)
+                        else ImportOutcome.Grok(GrokImport.analyseJson(text.byteInputStream(), cancelled = { cancelled }))
+                    }
+                }
             }
             main.post {
-                r.onSuccess { n -> toast("Imported $n topics"); onTopicsChanged() }
-                r.onFailure { e -> MaterialAlertDialogBuilder(this).setTitle("Couldn't import topics")
-                    .setMessage(e.message ?: "That file isn't a topics list.").setPositiveButton(android.R.string.ok, null).show() }
+                if (isFinishing || isDestroyed) return@post
+                if (dlg.isShowing) dlg.dismiss()
+                if (cancelled || r.exceptionOrNull() is GrokImport.Cancelled) return@post
+                r.onSuccess { o ->
+                    when (o) {
+                        is ImportOutcome.Json -> runCatching { Topics.importJson(this, o.text) }
+                            .onSuccess { n -> toast("Imported $n topics"); onTopicsChanged() }
+                            .onFailure { e -> importError(e.message) }
+                        is ImportOutcome.Grok -> showTopicPreview(o.r)
+                    }
+                }
+                r.onFailure { e -> importError(if (e is java.util.zip.ZipException) "That ZIP file looks damaged." else e.message) }
             }
         }
     }
-    fun importTopics() = runCatching { topicsPicker.launch(arrayOf("application/json", "text/plain", "*/*")) }
-        .onFailure { toast("No file picker available on this phone") }
+
+    private fun importError(msg: String?) = MaterialAlertDialogBuilder(this).setTitle("Couldn't import topics")
+        .setMessage(msg ?: "That file isn't a Grok export or a topics list.").setPositiveButton(android.R.string.ok, null).show()
+
+    var lastTopicPreview: AlertDialog? = null
+
+    /** Preview of topics found in a Grok export; untick any, then save (only topic names/sub-topics are stored). */
+    fun showTopicPreview(r: GrokImport.Result) {
+        if (r.topics.isEmpty()) {
+            lastTopicPreview = MaterialAlertDialogBuilder(this).setTitle("No topics found")
+                .setMessage("Read ${r.chats} chats but couldn't find clear topics. Is this a Grok data export?").setPositiveButton(android.R.string.ok, null).show()
+            return
+        }
+        val boxes = r.topics.map { t ->
+            com.google.android.material.checkbox.MaterialCheckBox(this).apply {
+                text = "${t.emoji} ${t.title} · ${t.chats} chats\n" + t.subtopics.take(3).joinToString(" · ")
+                isChecked = true; setPadding(0, dp(6), 0, dp(6)); tag = t
+            }
+        }
+        val body = vbox(20) {
+            addView(muted("From ${r.chats} chats" + (if (r.excludedSensitive > 0) ", skipping ${r.excludedSensitive} personal or sensitive ones" else "") +
+                ". Untick anything you don't want. Only these topic names are saved, privately on this phone."))
+            boxes.forEach { addView(it) }
+        }
+        lastTopicPreview = MaterialAlertDialogBuilder(this).setTitle("Found ${r.topics.size} topics")
+            .setView(ScrollView(this).apply { addView(body) })
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("Save") { _, _ ->
+                val chosen = boxes.filter { it.isChecked }.map { it.tag as GrokImport.Topic }
+                if (chosen.isEmpty()) { toast("Nothing selected"); return@setPositiveButton }
+                runCatching { Topics.importJson(this, GrokImport.toJson(chosen)) }
+                    .onSuccess { n -> toast("Saved $n topics"); onTopicsChanged() }.onFailure { importError(it.message) }
+            }.show()
+    }
     open fun onTopicsChanged() {}
 
     override fun onCreate(savedInstanceState: Bundle?) {

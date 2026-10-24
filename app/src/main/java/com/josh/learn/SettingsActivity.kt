@@ -134,7 +134,7 @@ class SettingsActivity : BaseActivity() {
             // ---------------- Suggested topics (imported)
             addView(title("Suggested topics"))
             val n = Topics.suggested(context).size
-            addView(muted(if (n > 0) "$n imported topics shown in \"Suggested for you\". Stored privately on this phone." else "Import a topics file (JSON) to fill \"Suggested for you\". It stays on this phone."))
+            addView(muted(if (n > 0) "$n imported topics shown in \"Suggested for you\". Stored privately on this phone." else "Import your Grok data export (.zip) or a topics file (.json) to fill \"Suggested for you\". It's analysed and kept on this phone."))
             addView(hbox {
                 addView(outlined(if (n > 0) "Import new file" else "Import my topics") { importTopics() })
                 if (n > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Clear imported topics") {
@@ -145,12 +145,6 @@ class SettingsActivity : BaseActivity() {
                 }) }
             })
 
-            // ---------------- Interests
-            addView(title("Your interests"))
-            addView(muted("Used for \"Suggested for you\" on the home screen. Separate with commas."))
-            val (iTil, iEt) = input("e.g. Roman history, investing, black holes", multiLine = true, value = Topics.interests(context).joinToString(", "))
-            addView(iTil)
-            addView(textBtn("Save interests") { Topics.setInterests(context, iEt.text?.toString() ?: ""); toast("Saved") })
 
             // ---------------- Lessons
             addView(title("New lessons"))

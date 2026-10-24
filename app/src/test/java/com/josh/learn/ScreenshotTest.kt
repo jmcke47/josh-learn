@@ -157,4 +157,25 @@ class ScreenshotTest {
             assertEquals("Get a free key", d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).text.toString())
         } finally { LocalModels.abiOverride = true }
     }
+
+    @Test fun grokPreviewLetsYouUntickBeforeSaving() {
+        val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+        val topics = listOf(
+            GrokImport.Topic("4WD & Car Mechanics", "Cars", "🚗", 500.0, 40, 90, 30, listOf("A", "B", "C", "D", "E")),
+            GrokImport.Topic("Gaming & Handhelds", "Gaming", "🎮", 300.0, 20, 50, 15, listOf("F", "G", "H", "I", "J")),
+            GrokImport.Topic("Psychology & Personality", "Health", "🧠", 100.0, 5, 9, 4, listOf("K", "L", "M", "N", "O")))
+        a.showTopicPreview(GrokImport.Result(topics, 120, 300, 7, 20)); idle()
+        val d = a.lastTopicPreview!!
+        assertTrue(d.isShowing)
+        val boxes = mutableListOf<com.google.android.material.checkbox.MaterialCheckBox>()
+        fun walk(v: View) { if (v is com.google.android.material.checkbox.MaterialCheckBox) boxes += v; if (v is android.view.ViewGroup) (0 until v.childCount).forEach { walk(v.getChildAt(it)) } }
+        walk(d.window!!.decorView)
+        assertEquals(3, boxes.size); assertTrue(boxes.all { it.isChecked })
+        assertTrue(texts(d.window!!.decorView).any { it.contains("skipping 7 personal or sensitive") })
+        snapView(d.window!!.decorView, "04-grok-import-preview")
+        boxes[2].isChecked = false
+        d.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick(); idle()
+        assertEquals(listOf("4WD & Car Mechanics", "Gaming & Handhelds"), Topics.suggested(ctx).map { it.title })
+        assertTrue(texts(a.window.decorView).contains("Gaming & Handhelds"))
+    }
 }

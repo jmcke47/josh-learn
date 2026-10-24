@@ -37,7 +37,7 @@ object Gen {
             Prompts.ParsedLesson(Lesson(topic = topic, title = title, difficulty = d, length = len, overview = overview,
                 concepts = concepts, glossary = terms, takeaways = emptyList()), cards)
         }
-        parsed.lesson.model = label(cfg)
+        parsed.lesson.model = label(if (cfg.provider == Provider.LOCAL) cfg else cfg.copy(model = AiClient.lastModel.get() ?: cfg.model))
         return parsed
     }
 

@@ -189,16 +189,9 @@ class MainActivity : BaseActivity() {
         addView(title("Suggested for you", top = 0))
         if (sugg.isEmpty()) {
             addView(card(top = 4) {
-                addView(muted("Import a topics file (JSON) to get personal picks here. It stays private on this phone."))
+                addView(muted("Import your Grok data export (.zip) or a topics file (.json) to get personal picks here. It's analysed on this phone and stays private."))
                 addView(outlined("Import my topics") { importTopics() })
             })
-            if (Topics.interests(context).isNotEmpty()) addView(row(Topics.suggestions(context).map { (t, cat) ->
-                card(top = 0, onClick = { startTopic(t, cat) }) {
-                    addView(label(cat?.emoji ?: "⭐").apply { textSize = 22f })
-                    addView(label(t, bold = true).apply { maxLines = 2 })
-                    addView(muted(cat?.name ?: "From your interests").apply { textSize = 12f })
-                }
-            }))
         } else {
             addView(row(sugg.map { s ->
                 val cat = s.asCategory
