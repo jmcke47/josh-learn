@@ -132,16 +132,20 @@ class SettingsActivity : BaseActivity() {
             Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }
 
             // ---------------- Suggested topics (imported)
-            addView(title("Suggested topics"))
-            val n = Topics.suggested(context).size
-            addView(muted(if (n > 0) "$n imported topics shown in \"Suggested for you\". Stored privately on this phone." else "Import your Grok data export (.zip) or a topics file (.json) to fill \"Suggested for you\". It's analysed and kept on this phone."))
+            addView(title("Your topics"))
+            val mineList = Topics.suggested(context); val n = mineList.size
+            addView(muted(if (n > 0) "$n topics on your home screen. Stored privately on this phone. Re-importing replaces them." else "Import your Grok data export (.zip) or a topics file (.json) to fill \"Suggested for you\". It's analysed and kept on this phone."))
+            mineList.forEach { s -> addView(hbox {
+                addView(label("${s.emoji}  ${s.title}").apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                addView(textBtn("Remove") { Topics.removeImported(context, s.title); render() }.apply { contentDescription = "Remove ${s.title}" })
+            }) }
             addView(hbox {
-                addView(outlined(if (n > 0) "Import new file" else "Import my topics") { importTopics() })
-                if (n > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Clear imported topics") {
-                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Clear imported topics?")
-                        .setMessage("Removes your suggested topics from this phone. Lessons you made stay.")
+                addView(outlined(if (n > 0) "Re-import" else "Import my topics") { importTopics() })
+                if (n > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Remove all") {
+                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Remove all your topics?")
+                        .setMessage("Removes all your topics from this phone. Lessons you made stay.")
                         .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton("Clear") { _, _ -> Topics.clearImported(context); render() }.show()
+                        .setPositiveButton("Remove all") { _, _ -> Topics.clearImported(context); render() }.show()
                 }) }
             })
 

@@ -46,11 +46,29 @@ class MainActivity : BaseActivity() {
                 prefs.edit().putBoolean("offline_setup_shown", true).apply()
                 OfflineSetup.show(this) { render() }
             }
+            if (intent?.action == TopicsWidget.ACTION_TOPIC) { handleWidgetIntent(intent); return }
             if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("notif_asked", false) &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 prefs.edit().putBoolean("notif_asked", true).apply()
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleWidgetIntent(intent) }
+
+    /** Widget tile tapped: go straight into a lesson for that topic. */
+    private fun handleWidgetIntent(i: Intent?) {
+        if (i?.action != TopicsWidget.ACTION_TOPIC) return
+        val topic = i.getStringExtra(TopicsWidget.EXTRA_TOPIC); val catId = i.getStringExtra(TopicsWidget.EXTRA_CATEGORY)
+        val special = i.getStringExtra(TopicsWidget.EXTRA_SPECIAL)
+        setIntent(Intent(this, MainActivity::class.java)) // handle once
+        tab = TAB_HOME; nav.selectedItemId = TAB_HOME
+        when {
+            topic != null -> Topics.suggested(this).firstOrNull { it.title == topic }?.asCategory?.let { startTopic(Topics.pick(it), it) } ?: toast("That topic was removed")
+            catId != null -> Topics.category(catId)?.let { startTopic(Topics.pick(it), it) }
+            special == "surprise" -> { val (t, c) = Topics.surprise(); startTopic(t, c) }
+            special == "custom" -> startActivity(Intent(this, NewLessonActivity::class.java))
         }
     }
 
@@ -66,6 +84,7 @@ class MainActivity : BaseActivity() {
         super.onResume()
         updater.onResume()
         render()
+        TopicsWidget.refresh(this)
     }
 
     private fun render() {
@@ -131,29 +150,64 @@ class MainActivity : BaseActivity() {
             })
         }
 
-        suggestedRow()
-
-        addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 4))
-        val grid = android.widget.GridLayout(context).apply { columnCount = 3; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } }
-        fun tile(emoji: String, name: String, onClick: () -> Unit, onLong: (() -> Unit)? = null) {
+        val mine = Topics.suggested(context)
+        fun grid(cols: Int) = android.widget.GridLayout(context).apply { columnCount = cols; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } }
+        fun place(g: android.widget.GridLayout, v: View) = g.addView(v, android.widget.GridLayout.LayoutParams(
+            android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, android.widget.GridLayout.FILL), android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply {
+            width = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
+        })
+        fun tile(g: android.widget.GridLayout, emoji: String, name: String, small: Boolean, onClick: () -> Unit, onLong: (() -> Unit)? = null) {
             val c = card(top = 0, onClick = { onClick() }) {
                 gravity = android.view.Gravity.CENTER_HORIZONTAL
-                setPadding(dp(4), dp(14), dp(4), dp(14))
-                addView(label(emoji).apply { textSize = 30f; gravity = android.view.Gravity.CENTER })
-                addView(label(name, com.google.android.material.R.attr.textAppearanceLabelLarge).apply { gravity = android.view.Gravity.CENTER; maxLines = 1 })
+                setPadding(dp(4), dp(if (small) 10 else 14), dp(4), dp(if (small) 10 else 14))
+                addView(label(emoji).apply { textSize = if (small) 22f else 30f; gravity = android.view.Gravity.CENTER })
+                addView(label(name, if (small) com.google.android.material.R.attr.textAppearanceLabelMedium else com.google.android.material.R.attr.textAppearanceLabelLarge)
+                    .apply { gravity = android.view.Gravity.CENTER; maxLines = 1 })
             }
             onLong?.let { l -> c.setOnLongClickListener { l(); true } }
             c.contentDescription = name
-            grid.addView(c, android.widget.GridLayout.LayoutParams(
-                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED), android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply {
-                width = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
-            })
+            place(g, c)
         }
-        Topics.categories.forEach { cat -> tile(cat.emoji, cat.name, { startTopic(Topics.pick(cat), cat) }, { subtopicSheet(cat) }) }
-        tile("🎲", "Surprise me", { val (t, c) = Topics.surprise(); startTopic(t, c) })
-        tile("➕", "Custom topic", { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)) })
-        addView(grid)
-        addView(muted("Tap a tile to start a lesson right away · press and hold to choose a sub-topic", top = 4).apply { textSize = 12f })
+        fun builtIns(g: android.widget.GridLayout, small: Boolean) {
+            Topics.categories.forEach { cat -> tile(g, cat.emoji, cat.name, small, { startTopic(Topics.pick(cat), cat) }, { subtopicSheet(cat) }) }
+            tile(g, "🎲", "Surprise me", small, { val (t, c) = Topics.surprise(); startTopic(t, c) })
+            tile(g, "➕", "Custom topic", small, { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)) })
+        }
+
+        if (mine.isNotEmpty()) {
+            // ---- Your topics: the main section
+            addView(label("Your topics", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 4))
+            val g = grid(2)
+            mine.forEach { s ->
+                val cat = s.asCategory
+                val next = s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.subtopics.firstOrNull() ?: s.category
+                val c = card(top = 0, onClick = { startTopic(Topics.pick(cat), cat) }) {
+                    setPadding(dp(14), dp(14), dp(14), dp(14))
+                    addView(label(s.emoji).apply { textSize = 30f })
+                    addView(label(s.title, com.google.android.material.R.attr.textAppearanceTitleSmall, bold = true).apply { maxLines = 2; setPadding(0, dp(6), 0, 0) })
+                    addView(muted(next).apply { textSize = 12f; maxLines = 2; setPadding(0, dp(2), 0, 0) })
+                }
+                c.setOnLongClickListener { subtopicSheet(cat, removable = s.title); true }
+                c.contentDescription = s.title
+                place(g, c)
+            }
+            addView(g)
+            addView(muted("Tap a topic to start a lesson · press and hold to pick a sub-topic or remove it", top = 4).apply { textSize = 12f })
+
+            addView(title("More to explore", top = 20))
+            val more = grid(4); builtIns(more, small = true); addView(more)
+        } else {
+            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { importTopics() }) {
+                addView(label("📥 Import your Grok history", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true,
+                    color = attrColor(com.google.android.material.R.attr.colorOnPrimaryContainer)))
+                addView(label("Pick your Grok data export (.zip) and Josh Learn builds your own topic tiles from what you chat about. It's analysed on this phone and stays private. A topics .json file works too.",
+                    com.google.android.material.R.attr.textAppearanceBodyMedium, color = attrColor(com.google.android.material.R.attr.colorOnPrimaryContainer), top = 4))
+                addView(button("Import my topics") { importTopics() })
+            }.apply { setCardBackgroundColor(attrColor(com.google.android.material.R.attr.colorPrimaryContainer)); strokeWidth = 0 })
+            addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
+            val g = grid(3); builtIns(g, small = false); addView(g)
+            addView(muted("Tap a tile to start a lesson right away · press and hold to choose a sub-topic", top = 4).apply { textSize = 12f })
+        }
 
         val due = Repo.due().size
         if (Repo.cards.isNotEmpty()) addView(card(onClick = { startActivity(Intent(this@MainActivity, ReviewActivity::class.java)) }) {
@@ -183,28 +237,6 @@ class MainActivity : BaseActivity() {
         })
     }
 
-    /** "Suggested for you": topics from the bundled suggested_topics.json (by priority), else local suggestions. */
-    private fun LinearLayout.suggestedRow() {
-        val sugg = Topics.suggested(context)
-        addView(title("Suggested for you", top = 0))
-        if (sugg.isEmpty()) {
-            addView(card(top = 4) {
-                addView(muted("Import your Grok data export (.zip) or a topics file (.json) to get personal picks here. It's analysed on this phone and stays private."))
-                addView(outlined("Import my topics") { importTopics() })
-            })
-        } else {
-            addView(row(sugg.map { s ->
-                val cat = s.asCategory
-                card(top = 0, onClick = { startTopic(Topics.pick(cat), cat) }) {
-                    addView(label(s.emoji).apply { textSize = 26f })
-                    addView(label(s.title, bold = true).apply { maxLines = 2 })
-                    addView(muted(s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.category).apply { textSize = 12f; maxLines = 2 })
-                }.apply { setOnLongClickListener { subtopicSheet(cat); true }; contentDescription = s.title }
-            }))
-        }
-        addView(View(context), LinearLayout.LayoutParams(1, dp(12)))
-    }
-
     private fun row(items: List<View>) = android.widget.HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         clipToPadding = false
@@ -219,7 +251,7 @@ class MainActivity : BaseActivity() {
         addView(progressBar(l.progressPercent))
     }
 
-    private fun subtopicSheet(cat: Topics.Category) {
+    private fun subtopicSheet(cat: Topics.Category, removable: String? = null) {
         val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
         val done = Repo.lessons.map { it.topic.lowercase() }.toSet()
         sheet.setContentView(ScrollView(this).apply {
@@ -239,6 +271,13 @@ class MainActivity : BaseActivity() {
                     addView(button("🎲 Random") { sheet.dismiss(); startTopic(Topics.pick(cat), cat) })
                     addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
                     addView(outlined("Learning path") { sheet.dismiss(); createPath(cat.name, defaultDifficulty()) })
+                })
+                if (removable != null) addView(textBtn("Remove from my topics") {
+                    sheet.dismiss()
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity).setTitle("Remove ${cat.emoji} ${cat.name}?")
+                        .setMessage("It disappears from Your topics. Lessons you already made stay. You can re-import any time in Settings.")
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton("Remove") { _, _ -> Topics.removeImported(this@MainActivity, removable); render() }.show()
                 })
             })
         })

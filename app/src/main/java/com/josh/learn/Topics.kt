@@ -3,7 +3,7 @@ package com.josh.learn
 import android.content.Context
 import androidx.core.content.edit
 
-/** Built-in topic catalogue for the home tiles, plus local "Suggested for you" logic. */
+/** Built-in topic catalogue ("More to explore") plus the user's own imported topics ("Your topics"). */
 object Topics {
     data class Category(val id: String, val name: String, val emoji: String, val subtopics: List<String>)
 
@@ -30,7 +30,7 @@ object Topics {
             "History of rock music", "Poetry basics", "Architecture styles", "How to read sheet music", "Storytelling structure", "Graphic design basics", "Classical composers")),
     )
 
-    // ---- "Suggested for you": topics the user imports from a JSON file {topics:[{title,category,emoji,priority,subtopics[]}]}.
+    // ---- "Your topics": topics the user imports from a JSON file {topics:[{title,category,emoji,priority,subtopics[]}]}.
     // Nothing is bundled in the APK; the import is saved privately in filesDir (kept across app updates).
     data class Suggested(val title: String, val category: String, val emoji: String, val priority: Int, val subtopics: List<String>) {
         /** As a tile category (id prefixed "s:") so the sub-topic sheet, paths and lesson emoji all work. */
@@ -66,10 +66,24 @@ object Topics {
         val f = importedFile(c); val tmp = java.io.File(f.parentFile, f.name + ".tmp")
         tmp.writeText(json); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
         suggestedCache = null; init(c)
+        TopicsWidget.refresh(c)
         return parsed.size
     }
 
-    fun clearImported(c: Context) { importedFile(c).delete(); suggestedCache = null; init(c) }
+    fun toJson(list: List<Suggested>): String = org.json.JSONObject().put("topics", org.json.JSONArray().apply {
+        list.forEach { s -> put(org.json.JSONObject().put("title", s.title).put("category", s.category).put("emoji", s.emoji)
+            .put("priority", s.priority).put("subtopics", org.json.JSONArray(s.subtopics))) }
+    }).toString(2)
+
+    /** Removes one imported topic (by title). Returns true if it was there. */
+    fun removeImported(c: Context, title: String): Boolean {
+        val all = suggested(c); val rest = all.filterNot { it.title.equals(title, ignoreCase = true) }
+        if (rest.size == all.size) return false
+        if (rest.isEmpty()) clearImported(c) else importJson(c, toJson(rest))
+        return true
+    }
+
+    fun clearImported(c: Context) { importedFile(c).delete(); suggestedCache = null; init(c); TopicsWidget.refresh(c) }
 
     private var suggestedCats: List<Category> = emptyList()
     fun init(c: Context) { suggestedCats = suggested(c).map { it.asCategory } }

@@ -64,6 +64,7 @@ android {
             // ./gradlew testDebugUnitTest -PscreensDir=/path renders Robolectric screenshots there.
             it.systemProperty("screens.dir", (project.findProperty("screensDir") as String?) ?: "")
             it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            it.systemProperty("topics.file", (project.findProperty("topicsFile") as String?) ?: "")
             it.systemProperty("grok.zip", (project.findProperty("grokZip") as String?) ?: "")
             it.systemProperty("project.root", rootProject.projectDir.absolutePath)
         }

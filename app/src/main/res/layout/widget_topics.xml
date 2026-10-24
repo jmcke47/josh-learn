@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="8dp" android:background="@drawable/widget_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="6dp" android:paddingEnd="2dp" android:paddingBottom="4dp">
+        <TextView android:id="@+id/widget_header" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="📚 Josh Learn" android:textColor="@color/widget_text" android:textSize="14sp" android:textStyle="bold" android:maxLines="1" />
+        <TextView android:id="@+id/widget_due" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:background="@drawable/widget_chip_bg" android:paddingStart="8dp" android:paddingEnd="8dp" android:paddingTop="2dp" android:paddingBottom="2dp"
+            android:text="🃏 3 due" android:textColor="@color/widget_on_chip" android:textSize="12sp" android:maxLines="1" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row0" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <TextView android:id="@+id/tile0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🔬\nScience" />
+        <TextView android:id="@+id/tile1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🏛️\nHistory" />
+        <TextView android:id="@+id/tile2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="💻\nTech" />
+        <TextView android:id="@+id/tile3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="💰\nMoney" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row1" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <TextView android:id="@+id/tile4" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🩺\nHealth" />
+        <TextView android:id="@+id/tile5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🚀\nSpace" />
+        <TextView android:id="@+id/tile6" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🧠\nPsychology" />
+        <TextView android:id="@+id/tile7" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🗣️\nLanguages" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row2" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <TextView android:id="@+id/tile8" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🌿\nNature" />
+        <TextView android:id="@+id/tile9" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🎨\nArts &amp; Music" />
+        <TextView android:id="@+id/tile10" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="🎲\nSurprise me" />
+        <TextView android:id="@+id/tile11" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_margin="3dp" android:background="@drawable/widget_tile_bg" android:gravity="center" android:padding="4dp"
+            android:maxLines="3" android:ellipsize="end" android:textColor="@color/widget_on_tile" android:textSize="12sp" android:text="➕\nCustom" />
+    </LinearLayout>
+</LinearLayout>

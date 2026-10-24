@@ -1,0 +1,8 @@
+<resources>
+    <color name="widget_bg">#F3F7F4</color>
+    <color name="widget_tile">#DCEBE2</color>
+    <color name="widget_on_tile">#10201A</color>
+    <color name="widget_text">#17211C</color>
+    <color name="widget_chip">#2E7D5B</color>
+    <color name="widget_on_chip">#FFFFFF</color>
+</resources>

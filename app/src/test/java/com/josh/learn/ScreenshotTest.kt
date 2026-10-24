@@ -63,17 +63,109 @@ class ScreenshotTest {
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         idle()
         var t = texts(a.window.decorView)
-        assertTrue(t.contains("Suggested for you"))
-        assertTrue(t.contains("Import my topics")) // empty by default: nothing bundled
-        assertTrue(!t.contains("4WD & Car Mechanics"))
+        assertTrue(t.none { it.contains("Suggested") })
+        assertTrue(t.contains("📥 Import your Grok history")) // empty by default: nothing bundled
+        assertTrue(t.contains("What do you want to learn?") && t.contains("Science") && t.contains("Custom topic"))
+        assertTrue(!t.contains("Your topics"))
+        assertEquals(Provider.LOCAL, a.providers.active) // offline is the default
+        assertTrue(t.contains("📲 Offline AI"))
+        snap(a, "01-home-no-topics")
         assertEquals(2, Topics.importJson(ctx, sample))
         a.onTopicsChanged(); idle()
         t = texts(a.window.decorView)
-        assertTrue(t.contains("4WD & Car Mechanics") && t.contains("Home Lab & Networking"))
-        assertTrue(t.contains("Science") && t.contains("Custom topic"))
-        assertEquals(Provider.LOCAL, a.providers.active) // offline is the default
-        assertTrue(t.contains("📲 Offline AI"))
-        snap(a, "01-home")
+        assertTrue(t.contains("Your topics") && t.contains("More to explore"))
+        assertTrue(t.indexOf("4WD & Car Mechanics") < t.indexOf("Home Lab & Networking")) // by priority
+        assertTrue(t.indexOf("Home Lab & Networking") < t.indexOf("More to explore"))
+        assertTrue(t.contains("How a Haldex AWD system works")) // top sub-topic line
+        assertTrue(t.contains("Science") && t.contains("Surprise me") && t.contains("Custom topic"))
+        assertTrue(!t.contains("📥 Import your Grok history") && t.none { it.contains("Suggested") })
+    }
+
+    /** Home with imported topics; uses -PtopicsFile=… (local, never committed) for a realistic render, else the sample. */
+    @Test fun homeWithTopicsScreenshot() {
+        val f = System.getProperty("topics.file").orEmpty()
+        Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+        LocalModels.abiOverride = false // hide the offline-setup card for a clean shot
+        try {
+            val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+            snap(a, "01-home")
+            val sv = findScroll(a.window.decorView)
+            if (sv != null && dir.isNotEmpty()) {
+                val child = sv.getChildAt(0); val w = sv.width.takeIf { it > 0 } ?: 1179
+                child.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                child.layout(0, 0, w, child.measuredHeight)
+                val bmp = Bitmap.createBitmap(w, child.measuredHeight, Bitmap.Config.ARGB_8888)
+                val cv = Canvas(bmp); cv.drawColor(a.attrColor(com.google.android.material.R.attr.colorSurface)); child.draw(cv)
+                File(dir, "01-home-full.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
+        } finally { LocalModels.abiOverride = true }
+    }
+
+    private fun findScroll(v: View): android.widget.ScrollView? = when (v) {
+        is android.widget.ScrollView -> v
+        is android.view.ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findScroll(v.getChildAt(it)) }
+        else -> null
+    }
+
+    @Test fun removeTopic() {
+        Topics.importJson(ctx, sample)
+        assertTrue(Topics.removeImported(ctx, "Home Lab & Networking"))
+        assertEquals(listOf("4WD & Car Mechanics"), Topics.suggested(ctx).map { it.title })
+        assertEquals(listOf("How a Haldex AWD system works"), Topics.suggested(ctx).first().subtopics)
+        assertTrue(!Topics.removeImported(ctx, "nope"))
+        assertTrue(Topics.removeImported(ctx, "4WD & Car Mechanics"))
+        assertTrue(Topics.suggested(ctx).isEmpty() && !Topics.importedFile(ctx).exists())
+    }
+
+    private fun widgetView(cols: Int, rows: Int, wDp: Int, hDp: Int): View {
+        val rv = TopicsWidget.build(ctx, cols, rows)
+        val parent = android.widget.FrameLayout(ctx)
+        val v = rv.apply(ctx, parent)
+        val d = ctx.resources.displayMetrics.density
+        val w = (wDp * d).toInt(); val h = (hDp * d).toInt()
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)); v.layout(0, 0, w, h)
+        return v
+    }
+    private fun visibleTiles(v: View) = texts(v).filter { it.contains("\n") }.let { all ->
+        val out = mutableListOf<String>()
+        fun walk(x: View) { if (x is android.widget.TextView && x.visibility == View.VISIBLE && x.text.contains("\n") && (x.parent as View).visibility == View.VISIBLE) out += x.text.toString()
+            if (x is android.view.ViewGroup) (0 until x.childCount).forEach { walk(x.getChildAt(it)) } }
+        walk(v); out
+    }
+
+    @Test fun widget() {
+        assertEquals(2 to 2, TopicsWidget.grid(150, 150))
+        assertEquals(4 to 2, TopicsWidget.grid(320, 180))
+        assertEquals(4 to 3, TopicsWidget.grid(320, 300))
+        // no topics imported: built-ins
+        var v = widgetView(2, 2, 170, 170)
+        assertEquals(listOf("🔬\nScience", "🏛️\nHistory", "💻\nTech", "💰\nMoney"), visibleTiles(v))
+        val f = System.getProperty("topics.file").orEmpty()
+        Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+        v = widgetView(2, 2, 170, 170)
+        val tiles = visibleTiles(v)
+        assertEquals(4, tiles.size)
+        assertTrue(tiles[0].endsWith(Topics.suggested(ctx)[0].title))
+        assertTrue(texts(v).any { it.startsWith("🃏") })
+        snapView(v, "05-widget-2x2")
+        val big = widgetView(4, 3, 330, 300)
+        assertEquals(12, visibleTiles(big).size)
+        snapView(big, "06-widget-4x3")
+        // the tile deep-links into a lesson for that topic
+        val i = TopicsWidget.items(ctx, 4)[0]
+        assertEquals(TopicsWidget.EXTRA_TOPIC, i.extraKey)
+    }
+
+    @Test fun widgetTapStartsLesson() {
+        Topics.importJson(ctx, sample)
+        val intent = android.content.Intent(ctx, MainActivity::class.java).setAction(TopicsWidget.ACTION_TOPIC)
+            .putExtra(TopicsWidget.EXTRA_TOPIC, "4WD & Car Mechanics")
+        LocalModels.abiOverride = false
+        try {
+            val a = Robolectric.buildActivity(MainActivity::class.java, intent).setup().get(); idle()
+            // no provider set up on this "phone" -> the add-key prompt appears, i.e. the lesson flow was started
+            assertTrue(a.lastKeyPrompt?.isShowing == true)
+        } finally { LocalModels.abiOverride = true }
     }
 
     @Test fun settingsProviders() {
@@ -140,7 +232,7 @@ class ScreenshotTest {
         assertEquals(2, Topics.suggested(ctx).size) // a bad file doesn't wipe the good one
         val s = Robolectric.buildActivity(SettingsActivity::class.java).setup().get(); idle()
         val t = texts(s.window.decorView)
-        assertTrue(t.contains("Clear imported topics"))
+        assertTrue(t.contains("Remove all") && t.contains("Re-import"))
         Topics.clearImported(ctx)
         assertTrue(!f.exists() && Topics.suggested(ctx).isEmpty())
     }
