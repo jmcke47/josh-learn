@@ -7,13 +7,16 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.view.View
+import android.util.TypedValue
 import android.widget.RemoteViews
+import android.widget.RemoteViewsService
 
 /**
- * Home-screen widget: the user's top topics as tiles (built-in topics if none imported), an "N due" chip that opens
- * Review, and a header that opens the app. Resizable: 2x2 shows 4 tiles, wider/taller shows up to 12.
+ * Home-screen widget: the user's topics as big tiles in a scrollable grid (built-in topics if none imported), an "N due" chip
+ * that opens Review, and a header that opens the app. Tiles stay ~115+ dp: a wider widget gets up to 3 columns, a taller one
+ * shows more rows, and anything that doesn't fit scrolls instead of shrinking the tiles.
  */
 class TopicsWidget : AppWidgetProvider() {
     override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) { ids.forEach { update(c, m, it) } }
@@ -21,51 +24,77 @@ class TopicsWidget : AppWidgetProvider() {
 
     data class Item(val emoji: String, val title: String, val extraKey: String, val extraValue: String)
 
+    /** Tile geometry for one widget instance, in dp. */
+    data class Grid(val cols: Int, val rows: Int, val tileWidthDp: Int, val tileHeightDp: Int)
+
     companion object {
         const val ACTION_TOPIC = "com.josh.learn.WIDGET_TOPIC"
         const val EXTRA_TOPIC = "widget_topic"     // imported topic title
         const val EXTRA_CATEGORY = "widget_cat"    // built-in category id
         const val EXTRA_SPECIAL = "widget_special" // "surprise" | "custom"
-        const val MAX_COLS = 5; const val MAX_ROWS = 8
-        private val TILE_IDS = intArrayOf(R.id.tile0, R.id.tile1, R.id.tile2, R.id.tile3, R.id.tile4, R.id.tile5, R.id.tile6, R.id.tile7, R.id.tile8, R.id.tile9, R.id.tile10, R.id.tile11, R.id.tile12, R.id.tile13, R.id.tile14, R.id.tile15, R.id.tile16, R.id.tile17, R.id.tile18, R.id.tile19, R.id.tile20, R.id.tile21, R.id.tile22, R.id.tile23, R.id.tile24, R.id.tile25, R.id.tile26, R.id.tile27, R.id.tile28, R.id.tile29, R.id.tile30, R.id.tile31, R.id.tile32, R.id.tile33, R.id.tile34, R.id.tile35, R.id.tile36, R.id.tile37, R.id.tile38, R.id.tile39)
-        private val ROW_IDS = intArrayOf(R.id.row0, R.id.row1, R.id.row2, R.id.row3, R.id.row4, R.id.row5, R.id.row6, R.id.row7)
+        const val MIN_TILE_DP = 115; const val MAX_COLS = 3
+        private const val CHROME_W = 16; private const val CHROME_H = 16 + 30 // widget padding, header row
 
-        /** Columns x rows for a widget of the given size in dp: ~78 dp wide, ~72 dp tall tiles, so they stay roughly square at any size. */
-        fun grid(widthDp: Int, heightDp: Int): Pair<Int, Int> {
-            val cols = if (widthDp <= 0) 2 else (widthDp / 78).coerceIn(2, MAX_COLS)
-            val rows = if (heightDp <= 0) 2 else Math.round((heightDp - 36) / 72f).coerceIn(1, MAX_ROWS)
-            return cols to rows
+        /** Columns and visible rows for a widget of the given size in dp. 0 (unknown) -> a normal 2-column phone widget. */
+        fun grid(widthDp: Int, heightDp: Int): Grid {
+            val w = if (widthDp <= 0) 300 else widthDp
+            val h = if (heightDp <= 0) 300 else heightDp
+            val cols = ((w - CHROME_W) / MIN_TILE_DP).coerceIn(1, MAX_COLS)
+            val usableH = (h - CHROME_H).coerceAtLeast(MIN_TILE_DP)
+            val rows = (usableH / MIN_TILE_DP).coerceAtLeast(1)
+            return Grid(cols, rows, (w - CHROME_W) / cols, (usableH / rows).coerceIn(MIN_TILE_DP, 170))
+        }
+
+        /** Title size in sp so the longest word fits on one line and the title fits in 2 lines; shrinks before it would break a word. */
+        fun titleSp(title: String, tileWidthDp: Int): Float {
+            val avail = (tileWidthDp - 8 - 16 - 4).coerceAtLeast(40).toFloat()
+            val em = 0.60f // average bold glyph width in em
+            val longest = title.split(' ', '-', '/').maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+            val byWord = avail / (em * longest)
+            val byLines = 2 * avail / (em * title.length * 1.12f)
+            return minOf(16f, byWord, byLines).coerceAtLeast(11f).let { Math.floor(it.toDouble()).toFloat() }
         }
 
         /** Imported topics by priority, then built-in topics, then Surprise / Custom. */
-        fun items(c: Context, n: Int): List<Item> {
+        fun items(c: Context, n: Int = Int.MAX_VALUE): List<Item> {
             val mine = Topics.suggested(c).map { Item(it.emoji, it.title, EXTRA_TOPIC, it.title) }
             val builtIn = Topics.categories.map { Item(it.emoji, it.name, EXTRA_CATEGORY, it.id) }
             val extras = listOf(Item("🎲", "Surprise me", EXTRA_SPECIAL, "surprise"), Item("➕", "Custom", EXTRA_SPECIAL, "custom"))
-            return if (mine.isEmpty()) (builtIn + extras).take(n)
-            else (mine + builtIn + extras).take(n)
+            return (mine + builtIn + extras).take(n)
         }
 
-        fun build(c: Context, cols: Int, rows: Int): RemoteViews {
+        fun tile(c: Context, item: Item, slot: Int, g: Grid): RemoteViews {
+            val v = RemoteViews(c.packageName, R.layout.widget_topic_tile)
+            v.setTextViewText(R.id.tile_emoji, item.emoji)
+            v.setTextViewText(R.id.tile_title, item.title)
+            v.setTextViewTextSize(R.id.tile_title, TypedValue.COMPLEX_UNIT_SP, titleSp(item.title, g.tileWidthDp))
+            v.setTextViewTextSize(R.id.tile_emoji, TypedValue.COMPLEX_UNIT_SP, if (g.tileHeightDp >= 135) 40f else 34f)
+            if (Build.VERSION.SDK_INT >= 31) v.setViewLayoutHeight(R.id.tile_frame, g.tileHeightDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+            v.setContentDescription(R.id.tile_root, "Learn ${item.title}")
+            v.setOnClickFillInIntent(R.id.tile_root, Intent().setData(Uri.parse("joshlearn://widget/$slot")).putExtra(item.extraKey, item.extraValue))
+            return v
+        }
+
+        fun build(c: Context, g: Grid, widgetId: Int = 0): RemoteViews {
             val v = RemoteViews(c.packageName, R.layout.widget_topics)
-            val items = items(c, cols * rows)
-            @Suppress("NAME_SHADOWING") val rows = minOf(rows, maxOf(1, (items.size + cols - 1) / cols)) // no empty rows: tiles grow instead
-            for (r in 0 until MAX_ROWS) v.setViewVisibility(ROW_IDS[r], if (r < rows) View.VISIBLE else View.GONE)
-            for (r in 0 until MAX_ROWS) for (col in 0 until MAX_COLS) {
-                val i = r * MAX_COLS + col; val id = TILE_IDS[i]
-                val slot = r * cols + col
-                val item = items.getOrNull(slot)
-                if (col >= cols || r >= rows || item == null) { v.setViewVisibility(id, if (col >= cols) View.GONE else View.INVISIBLE); continue }
-                v.setViewVisibility(id, View.VISIBLE)
-                v.setTextViewText(id, "${item.emoji}\n${item.title}")
-                v.setContentDescription(id, "Learn ${item.title}")
-                val intent = Intent(c, MainActivity::class.java).setAction(ACTION_TOPIC)
-                    .setData(Uri.parse("joshlearn://widget/$slot")).putExtra(item.extraKey, item.extraValue)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                v.setOnClickPendingIntent(id, PendingIntent.getActivity(c, 100 + slot, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            v.setInt(R.id.widget_grid, "setNumColumns", g.cols)
+            if (Build.VERSION.SDK_INT >= 31) {
+                val b = RemoteViews.RemoteCollectionItems.Builder().setViewTypeCount(1).setHasStableIds(true)
+                items(c).forEachIndexed { i, it -> b.addItem(i.toLong(), tile(c, it, i, g)) }
+                v.setRemoteAdapter(R.id.widget_grid, b.build())
+            } else {
+                val svc = Intent(c, TopicsWidgetService::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                    .putExtra("cols", g.cols).putExtra("tw", g.tileWidthDp).putExtra("th", g.tileHeightDp)
+                svc.data = Uri.parse("joshlearn://widget-svc/$widgetId/${g.cols}/${g.tileWidthDp}/${g.tileHeightDp}")
+                @Suppress("DEPRECATION") v.setRemoteAdapter(R.id.widget_grid, svc)
+                v.setEmptyView(R.id.widget_grid, R.id.widget_empty)
             }
+            val template = Intent(c, MainActivity::class.java).setAction(ACTION_TOPIC)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            v.setPendingIntentTemplate(R.id.widget_grid, PendingIntent.getActivity(c, 100, template,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)))
             val due = runCatching { Repo.due().size }.getOrDefault(0)
-            v.setTextViewText(R.id.widget_due, if (due > 0) "🃏 $due due" else "🃏 0 due")
+            v.setTextViewText(R.id.widget_due, "🃏 $due due")
             v.setOnClickPendingIntent(R.id.widget_due, PendingIntent.getActivity(c, 90, Intent(c, ReviewActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             v.setOnClickPendingIntent(R.id.widget_header, PendingIntent.getActivity(c, 91, Intent(c, MainActivity::class.java)
@@ -75,8 +104,11 @@ class TopicsWidget : AppWidgetProvider() {
 
         fun update(c: Context, m: AppWidgetManager, id: Int) {
             val o = m.getAppWidgetOptions(id)
-            val (cols, rows) = grid(o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0, o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0)
-            runCatching { m.updateAppWidget(id, build(c, cols, rows)) }
+            val g = grid(o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0, o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0)
+            runCatching {
+                m.updateAppWidget(id, build(c, g, id))
+                @Suppress("DEPRECATION") if (Build.VERSION.SDK_INT < 31) m.notifyAppWidgetViewDataChanged(id, R.id.widget_grid)
+            }
         }
 
         /** Call after topics or flashcards change. */
@@ -84,5 +116,22 @@ class TopicsWidget : AppWidgetProvider() {
             val m = AppWidgetManager.getInstance(c) ?: return@runCatching
             m.getAppWidgetIds(ComponentName(c, TopicsWidget::class.java))?.forEach { update(c.applicationContext, m, it) }
         }
+    }
+}
+
+/** Collection adapter for Android 8-11 (12+ passes the tiles inline via RemoteCollectionItems). */
+class TopicsWidgetService : RemoteViewsService() {
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = object : RemoteViewsFactory {
+        val g = TopicsWidget.Grid(intent.getIntExtra("cols", 2), 0, intent.getIntExtra("tw", 150), intent.getIntExtra("th", 120))
+        var list = emptyList<TopicsWidget.Item>()
+        override fun onCreate() {}
+        override fun onDataSetChanged() { list = TopicsWidget.items(applicationContext) }
+        override fun onDestroy() {}
+        override fun getCount() = list.size
+        override fun getViewAt(position: Int) = TopicsWidget.tile(applicationContext, list[position], position, g)
+        override fun getLoadingView(): RemoteViews? = null
+        override fun getViewTypeCount() = 1
+        override fun getItemId(position: Int) = position.toLong()
+        override fun hasStableIds() = true
     }
 }

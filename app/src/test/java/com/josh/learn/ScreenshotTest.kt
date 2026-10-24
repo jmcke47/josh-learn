@@ -117,53 +117,73 @@ class ScreenshotTest {
         assertTrue(Topics.suggested(ctx).isEmpty() && !Topics.importedFile(ctx).exists())
     }
 
-    private fun widgetView(cols: Int, rows: Int, wDp: Int, hDp: Int): View {
-        val rv = TopicsWidget.build(ctx, cols, rows)
+    private fun widgetView(wDp: Int, hDp: Int): View {
+        val g = TopicsWidget.grid(wDp, hDp)
+        val rv = TopicsWidget.build(ctx, g)
         val parent = android.widget.FrameLayout(ctx)
         val v = rv.apply(ctx, parent)
+        // Robolectric has no launcher to bind the collection, so host it like a launcher does: each tile is TopicsWidget.tile()'s RemoteViews
+        val gv = findGrid(v)!!
+        if (gv.adapter == null) {
+            val items = TopicsWidget.items(ctx)
+            gv.adapter = object : android.widget.BaseAdapter() {
+                override fun getCount() = items.size
+                override fun getItem(p: Int) = items[p]
+                override fun getItemId(p: Int) = p.toLong()
+                override fun getView(p: Int, cv: View?, pg: android.view.ViewGroup) = TopicsWidget.tile(ctx, items[p], p, g).apply(ctx, pg)
+            }
+        }
         val d = ctx.resources.displayMetrics.density
         val w = (wDp * d).toInt(); val h = (hDp * d).toInt()
-        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)); v.layout(0, 0, w, h)
+        repeat(2) { idle(); v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)); v.layout(0, 0, w, h) }
         return v
     }
-    private fun visibleTiles(v: View) = texts(v).filter { it.contains("\n") }.let { all ->
-        val out = mutableListOf<String>()
-        fun walk(x: View) { if (x is android.widget.TextView && x.visibility == View.VISIBLE && x.text.contains("\n") && (x.parent as View).visibility == View.VISIBLE) out += x.text.toString()
-            if (x is android.view.ViewGroup) (0 until x.childCount).forEach { walk(x.getChildAt(it)) } }
-        walk(v); out
+    private fun gridOf(v: View): android.widget.GridView = findGrid(v)!!
+    private fun findGrid(v: View): android.widget.GridView? = when (v) {
+        is android.widget.GridView -> v
+        is android.view.ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findGrid(v.getChildAt(it)) }
+        else -> null
     }
+    /** Titles of the tiles laid out on screen (before scrolling). */
+    private fun visibleTiles(v: View): List<String> { val g = gridOf(v); return (0 until g.childCount).map { texts(g.getChildAt(it)).last() } }
+    private fun adapterTitles(v: View): List<String> { val g = gridOf(v); val a = g.adapter
+        return (0 until a.count).map { texts(a.getView(it, null, g)).last() } }
 
     @Test fun widget() {
-        assertEquals(2 to 2, TopicsWidget.grid(150, 150))
-        assertEquals(4 to 2, TopicsWidget.grid(320, 180))
-        assertEquals(4 to 7, TopicsWidget.grid(340, 540))   // 4x6 full screen
-        assertEquals(5 to 8, TopicsWidget.grid(420, 640))   // 5x7
-        assertEquals(5 to 8, TopicsWidget.grid(2000, 3000)) // never more slots than the layout has
+        assertEquals(TopicsWidget.Grid(1, 1, 134, 124), TopicsWidget.grid(150, 170))  // 2x2: one big tile, scrolls
+        assertEquals(2, TopicsWidget.grid(340, 540).cols)    // 4x6 full screen on a normal phone: 2 columns
+        assertEquals(4, TopicsWidget.grid(340, 540).rows)
+        assertEquals(3, TopicsWidget.grid(420, 640).cols)    // wide: 3 max
+        assertEquals(3, TopicsWidget.grid(2000, 3000).cols)
+        assertTrue(TopicsWidget.grid(340, 540).let { it.tileWidthDp >= 115 && it.tileHeightDp >= 115 })
+        assertTrue(listOf(150 to 150, 250 to 250, 340 to 540, 420 to 640, 700 to 900).all { (w, h) -> TopicsWidget.grid(w, h).tileWidthDp >= 110 })
+        // titles shrink before breaking a word; never below 11sp, never above 16sp
+        assertEquals(16f, TopicsWidget.titleSp("Tech", 162))
+        assertTrue(TopicsWidget.titleSp("Instruments", 134) in 11f..16f)
+        assertTrue(TopicsWidget.titleSp("Cryptocurrency & Blockchain", 162) < TopicsWidget.titleSp("Tech", 162))
         // no topics imported: built-ins
-        var v = widgetView(2, 2, 170, 170)
-        assertEquals(listOf("🔬\nScience", "🏛️\nHistory", "💻\nTech", "💰\nMoney"), visibleTiles(v))
+        var v = widgetView(340, 300)
+        assertEquals(listOf("Science", "History", "Tech", "Money"), visibleTiles(v).take(4))
         val f = System.getProperty("topics.file").orEmpty()
         Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
-        v = widgetView(2, 2, 170, 170)
-        val tiles = visibleTiles(v)
-        assertEquals(4, tiles.size)
-        assertTrue(tiles[0].endsWith(Topics.suggested(ctx)[0].title))
+        v = widgetView(170, 170)
+        assertEquals(Topics.suggested(ctx)[0].title, visibleTiles(v)[0])
         assertTrue(texts(v).any { it.startsWith("🃏") })
         snapView(v, "05-widget-2x2")
-        val big = widgetView(4, 3, 330, 300)
-        assertEquals(12, visibleTiles(big).size)
-        snapView(big, "06-widget-4x3")
-        val (fc, fr) = TopicsWidget.grid(340, 540)
-        val full = widgetView(fc, fr, 340, 540)
-        val fullTiles = visibleTiles(full)
-        assertEquals(minOf(fc * fr, TopicsWidget.items(ctx, 99).size), fullTiles.size)
-        assertTrue(Topics.suggested(ctx).all { s -> fullTiles.any { it.endsWith(s.title) } }) // every imported topic shown
+        val square = widgetView(300, 300)
+        snapView(square, "06-widget-4x3")
+        val full = widgetView(340, 540)
+        // every topic is in the (scrollable) grid, not squeezed into tiny tiles
+        val all = adapterTitles(full)
+        assertEquals(TopicsWidget.items(ctx).map { it.title }, all)
+        assertTrue(Topics.suggested(ctx).all { s -> s.title in all })
+        assertTrue(visibleTiles(full).size in 8..10)
+        val tileH = gridOf(full).getChildAt(0).height / ctx.resources.displayMetrics.density
+        assertTrue("tile height $tileH", tileH >= 110)
         snapView(full, "07-widget-4x6-fullscreen")
-        val (gc, gr) = TopicsWidget.grid(420, 640)
-        val v57 = widgetView(gc, gr, 420, 640)
-        assertEquals(TopicsWidget.items(ctx, 99).size.coerceAtMost(gc * gr), visibleTiles(v57).size)
+        val v57 = widgetView(420, 640)
+        assertEquals(3, gridOf(v57).numColumns)
         snapView(v57, "08-widget-5x7")
-        // the tile deep-links into a lesson for that topic
         val i = TopicsWidget.items(ctx, 4)[0]
         assertEquals(TopicsWidget.EXTRA_TOPIC, i.extraKey)
     }

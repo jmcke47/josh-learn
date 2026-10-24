@@ -160,7 +160,7 @@ class MainActivity : BaseActivity() {
             val c = card(top = 0, onClick = { onClick() }) {
                 gravity = android.view.Gravity.CENTER_HORIZONTAL
                 setPadding(dp(4), dp(if (small) 10 else 14), dp(4), dp(if (small) 10 else 14))
-                addView(label(emoji).apply { textSize = if (small) 22f else 30f; gravity = android.view.Gravity.CENTER })
+                addView(label(emoji).apply { textSize = if (small) 28f else 34f; gravity = android.view.Gravity.CENTER })
                 addView(label(name, if (small) com.google.android.material.R.attr.textAppearanceLabelMedium else com.google.android.material.R.attr.textAppearanceLabelLarge)
                     .apply { gravity = android.view.Gravity.CENTER; maxLines = 1 })
             }
@@ -182,10 +182,14 @@ class MainActivity : BaseActivity() {
                 val cat = s.asCategory
                 val next = s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.subtopics.firstOrNull() ?: s.category
                 val c = card(top = 0, onClick = { startTopic(Topics.pick(cat), cat) }) {
-                    setPadding(dp(14), dp(14), dp(14), dp(14))
-                    addView(label(s.emoji).apply { textSize = 30f })
-                    addView(label(s.title, com.google.android.material.R.attr.textAppearanceTitleSmall, bold = true).apply { maxLines = 2; setPadding(0, dp(6), 0, 0) })
-                    addView(muted(next).apply { textSize = 12f; maxLines = 2; setPadding(0, dp(2), 0, 0) })
+                    setPadding(dp(16), dp(18), dp(16), dp(18))
+                    minimumHeight = dp(168)
+                    addView(label(s.emoji).apply { textSize = 40f })
+                    addView(label(s.title, com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true).apply {
+                        maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; textSize = 17f
+                        hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE; breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
+                        setPadding(0, dp(8), 0, 0) })
+                    addView(muted(next).apply { textSize = 13f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, dp(4), 0, 0) })
                 }
                 c.setOnLongClickListener { subtopicSheet(cat, removable = s.title); true }
                 c.contentDescription = s.title
@@ -195,7 +199,7 @@ class MainActivity : BaseActivity() {
             addView(muted("Tap a topic to start a lesson · press and hold to pick a sub-topic or remove it", top = 4).apply { textSize = 12f })
 
             addView(title("More to explore", top = 20))
-            val more = grid(4); builtIns(more, small = true); addView(more)
+            val more = grid(3); builtIns(more, small = true); addView(more)
         } else {
             addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { importTopics() }) {
                 addView(label("📥 Import your Grok history", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true,
