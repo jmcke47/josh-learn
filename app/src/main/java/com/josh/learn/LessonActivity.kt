@@ -53,6 +53,18 @@ class LessonActivity : BaseActivity() {
         if (lesson.isOffline || lesson.model != null) addView(muted(
             if (lesson.isOffline) "⚠ Made offline by ${lesson.model!!.removePrefix("Offline · ")}. Offline lessons are simpler and may contain mistakes; double-check important facts."
             else "Made with ${lesson.model}", top = 6).apply { textSize = 12f })
+        val depthKey = lesson.category ?: lesson.topic
+        val rewrite = button("Rewrite at this depth") { regenerate(lesson.difficulty, Depths.get(this@LessonActivity, depthKey)) }.apply { visibility = android.view.View.GONE }
+        addView(card {
+            addView(depthSlider(lesson.depth) { d -> Depths.set(this@LessonActivity, depthKey, d); rewrite.visibility = if (d != lesson.depth) android.view.View.VISIBLE else android.view.View.GONE
+                rewrite.text = "Rewrite as \"${d.label}\"" })
+            addView(rewrite)
+        })
+        addView(hbox {
+            addView(tonal("⚡ 2-minute version") { startActivity(Intent(this@LessonActivity, QuickActivity::class.java).putExtra("topic", lesson.topic.ifBlank { lesson.title }).putExtra("cat", lesson.category)) })
+            addView(android.view.View(context), LinearLayout.LayoutParams(dp(8), 1))
+            addView(outlined("⏱️ 60s challenge") { startActivity(Intent(this@LessonActivity, ChallengeActivity::class.java).putExtra("topic", lesson.topic.ifBlank { lesson.title }).putExtra("cat", lesson.category)) })
+        })
         addView(progress.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) } })
         addView(progressText)
         refreshProgress()
@@ -119,11 +131,11 @@ class LessonActivity : BaseActivity() {
     private fun openChat(prompt: String? = null, draft: String? = null) =
         startActivity(Intent(this, ChatActivity::class.java).putExtra("id", lesson.id).putExtra(ChatActivity.EXTRA_PROMPT, prompt).putExtra(ChatActivity.EXTRA_DRAFT, draft))
 
-    private fun regenerate(d: Difficulty) {
+    private fun regenerate(d: Difficulty, depth: Depth = lesson.depth) {
         val l = lesson
-        runAi("Writing a ${d.label.lowercase()} version…", task = { cfg, onDelta, cancelled ->
+        runAi(if (depth != l.depth) "Rewriting as \"${depth.label}\"…" else "Writing a ${d.label.lowercase()} version…", task = { cfg, onDelta, cancelled ->
             Gen.lesson(cfg, l.topic.ifBlank { l.title }, d, l.length,
-                source = (if (cfg.provider == Provider.LOCAL) "" else "Existing lesson to adapt:\n" + l.contextText()).ifEmpty { null }, onDelta = onDelta, cancelled = cancelled)
+                source = (if (cfg.provider == Provider.LOCAL) "" else "Existing lesson to adapt:\n" + l.contextText()).ifEmpty { null }, onDelta = onDelta, cancelled = cancelled, depth = depth)
         }) { parsed ->
             parsed.lesson.sourceUrl = l.sourceUrl; parsed.lesson.category = l.category
             Repo.addLesson(parsed.lesson, parsed.flashcards)

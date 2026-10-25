@@ -19,13 +19,17 @@ import android.widget.RemoteViewsService
  * shows more rows, and anything that doesn't fit scrolls instead of shrinking the tiles.
  */
 class TopicsWidget : AppWidgetProvider() {
-    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) { ids.forEach { update(c, m, it) } }
+    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
+        ids.forEach { update(c, m, it) }
+        // New day: write the fun fact with a cloud provider in the background (the offline model is only loaded inside the app)
+        runCatching { val p = ProviderStore(c); if (p.active != Provider.LOCAL) TopicOfDay.ensureFact(c, p) }
+    }
     override fun onAppWidgetOptionsChanged(c: Context, m: AppWidgetManager, id: Int, options: Bundle?) = update(c, m, id)
 
     data class Item(val emoji: String, val title: String, val extraKey: String, val extraValue: String)
 
     /** Tile geometry for one widget instance, in dp. */
-    data class Grid(val cols: Int, val rows: Int, val tileWidthDp: Int, val tileHeightDp: Int)
+    data class Grid(val cols: Int, val rows: Int, val tileWidthDp: Int, val tileHeightDp: Int, val showTopicOfDay: Boolean = false)
 
     companion object {
         const val ACTION_TOPIC = "com.josh.learn.WIDGET_TOPIC"
@@ -34,15 +38,17 @@ class TopicsWidget : AppWidgetProvider() {
         const val EXTRA_SPECIAL = "widget_special" // "surprise" | "custom"
         const val MIN_TILE_DP = 115; const val MAX_COLS = 3
         private const val CHROME_W = 16; private const val CHROME_H = 16 + 30 // widget padding, header row
+        const val TOD_H = 86; const val TOD_MIN_HEIGHT = 250 // topic-of-the-day banner, shown when the widget is at least this tall
 
         /** Columns and visible rows for a widget of the given size in dp. 0 (unknown) -> a normal 2-column phone widget. */
         fun grid(widthDp: Int, heightDp: Int): Grid {
             val w = if (widthDp <= 0) 300 else widthDp
             val h = if (heightDp <= 0) 300 else heightDp
             val cols = ((w - CHROME_W) / MIN_TILE_DP).coerceIn(1, MAX_COLS)
-            val usableH = (h - CHROME_H).coerceAtLeast(MIN_TILE_DP)
+            val tod = h >= TOD_MIN_HEIGHT
+            val usableH = (h - CHROME_H - (if (tod) TOD_H else 0)).coerceAtLeast(MIN_TILE_DP)
             val rows = (usableH / MIN_TILE_DP).coerceAtLeast(1)
-            return Grid(cols, rows, (w - CHROME_W) / cols, (usableH / rows).coerceIn(MIN_TILE_DP, 170))
+            return Grid(cols, rows, (w - CHROME_W) / cols, (usableH / rows).coerceIn(MIN_TILE_DP, 170), tod)
         }
 
         /** Title size in sp so the longest word fits on one line and the title fits in 2 lines; shrinks before it would break a word. */
@@ -64,7 +70,9 @@ class TopicsWidget : AppWidgetProvider() {
         }
 
         fun tile(c: Context, item: Item, slot: Int, g: Grid): RemoteViews {
-            val v = RemoteViews(c.packageName, R.layout.widget_topic_tile)
+            val theme = Display.theme(c)
+            val v = RemoteViews(c.packageName, if (theme == "osrs") R.layout.widget_topic_tile_osrs else R.layout.widget_topic_tile)
+            if (theme == "amoled") { v.setInt(R.id.tile_root, "setBackgroundResource", R.drawable.widget_tile_bg_amoled); v.setTextColor(R.id.tile_title, 0xFFE8E8E8.toInt()) }
             v.setTextViewText(R.id.tile_emoji, item.emoji)
             v.setTextViewText(R.id.tile_title, item.title)
             v.setTextViewTextSize(R.id.tile_title, TypedValue.COMPLEX_UNIT_SP, titleSp(item.title, g.tileWidthDp))
@@ -76,7 +84,24 @@ class TopicsWidget : AppWidgetProvider() {
         }
 
         fun build(c: Context, g: Grid, widgetId: Int = 0): RemoteViews {
-            val v = RemoteViews(c.packageName, R.layout.widget_topics)
+            val theme = Display.theme(c)
+            val v = RemoteViews(c.packageName, if (theme == "osrs") R.layout.widget_topics_osrs else R.layout.widget_topics)
+            if (theme == "amoled") {
+                v.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_amoled)
+                v.setInt(R.id.widget_tod, "setBackgroundResource", R.drawable.widget_tod_bg_amoled)
+                v.setTextColor(R.id.widget_header, 0xFFE8E8E8.toInt()); v.setTextColor(R.id.tod_title, 0xFFB9F2D2.toInt()); v.setTextColor(R.id.tod_fact, 0xFFE8E8E8.toInt())
+            }
+            // Topic of the day (one per local date), with the cached fun fact or a fallback line
+            val tod = if (g.showTopicOfDay) TopicOfDay.pick(c) else null
+            v.setViewVisibility(R.id.widget_tod, if (tod != null) android.view.View.VISIBLE else android.view.View.GONE)
+            if (tod != null) {
+                v.setTextViewText(R.id.tod_title, "⭐ Topic of the day · ${tod.emoji} ${tod.title}")
+                v.setTextViewText(R.id.tod_fact, TopicOfDay.line(c) ?: TopicOfDay.fallback(tod))
+                v.setContentDescription(R.id.widget_tod, "Topic of the day: ${tod.title}")
+                v.setOnClickPendingIntent(R.id.widget_tod, PendingIntent.getActivity(c, 92, Intent(c, MainActivity::class.java).setAction(ACTION_TOPIC)
+                    .setData(Uri.parse("joshlearn://widget/tod")).putExtra(tod.extraKey, tod.extraValue)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            }
             v.setInt(R.id.widget_grid, "setNumColumns", g.cols)
             if (Build.VERSION.SDK_INT >= 31) {
                 val b = RemoteViews.RemoteCollectionItems.Builder().setViewTypeCount(1).setHasStableIds(true)
@@ -85,7 +110,7 @@ class TopicsWidget : AppWidgetProvider() {
             } else {
                 val svc = Intent(c, TopicsWidgetService::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                     .putExtra("cols", g.cols).putExtra("tw", g.tileWidthDp).putExtra("th", g.tileHeightDp)
-                svc.data = Uri.parse("joshlearn://widget-svc/$widgetId/${g.cols}/${g.tileWidthDp}/${g.tileHeightDp}")
+                svc.data = Uri.parse("joshlearn://widget-svc/$widgetId/${g.cols}/${g.tileWidthDp}/${g.tileHeightDp}/$theme")
                 @Suppress("DEPRECATION") v.setRemoteAdapter(R.id.widget_grid, svc)
                 v.setEmptyView(R.id.widget_grid, R.id.widget_empty)
             }

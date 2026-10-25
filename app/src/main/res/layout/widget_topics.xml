@@ -10,6 +10,16 @@
             android:background="@drawable/widget_chip_bg" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="3dp" android:paddingBottom="3dp"
             android:text="🃏 0 due" android:textColor="@color/widget_on_chip" android:textSize="13sp" android:maxLines="1" />
     </LinearLayout>
+    <LinearLayout android:id="@+id/widget_tod" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_margin="4dp" android:background="@drawable/widget_tod_bg"
+        android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="8dp" android:paddingBottom="8dp">
+        <TextView android:id="@+id/tod_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="⭐ Topic of the day · 🔬 Science" android:textColor="@color/widget_on_tile" android:textSize="14sp" android:textStyle="bold"
+            android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/tod_fact" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
+            android:text="Tap for today's lesson." android:textColor="@color/widget_on_tile" android:textSize="13sp"
+            android:maxLines="3" android:ellipsize="end" android:hyphenationFrequency="none" />
+    </LinearLayout>
     <GridView android:id="@+id/widget_grid" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:numColumns="2" android:stretchMode="columnWidth" android:horizontalSpacing="0dp" android:verticalSpacing="0dp"
         android:scrollbars="none" android:clipToPadding="false" />

@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.core.content.ContextCompat
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 
 class MainActivity : BaseActivity() {
@@ -85,6 +86,7 @@ class MainActivity : BaseActivity() {
         updater.onResume()
         render()
         TopicsWidget.refresh(this)
+        TopicOfDay.ensureFact(this, providers) { if (!isFinishing && ::content.isInitialized && tab == TAB_HOME) render() }
     }
 
     private fun render() {
@@ -122,6 +124,36 @@ class MainActivity : BaseActivity() {
 
     private fun startTopic(topic: String, cat: Topics.Category?) =
         createLesson(topic, defaultDifficulty(), defaultLength(), category = cat?.id)
+
+    fun startQuick(topic: String, cat: Topics.Category?) =
+        startActivity(Intent(this, QuickActivity::class.java).putExtra("topic", topic).putExtra("cat", cat?.id))
+    fun startChallenge(topic: String, cat: Topics.Category?) =
+        startActivity(Intent(this, ChallengeActivity::class.java).putExtra("topic", topic).putExtra("cat", cat?.id))
+
+    /** Topic of the day + Quick 2-minute mode + Challenge entry points at the top of home. */
+    private fun topOfHome(col: LinearLayout) = with(col) {
+        val todItem = TopicOfDay.pick(context)
+        val todCat = todItem?.let { i -> if (i.extraKey == TopicsWidget.EXTRA_TOPIC) Topics.suggested(context).firstOrNull { it.title == i.title }?.asCategory else Topics.category(i.extraValue) }
+        if (todItem != null && todCat != null) addView(card(top = 10, onClick = { subtopicSheet(todCat) }) {
+            addView(muted("⭐ Topic of the day"))
+            addView(label("${todItem.emoji} ${todItem.title}", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true, top = 2))
+            addView(label(TopicOfDay.line(context) ?: "", com.google.android.material.R.attr.textAppearanceBodyMedium, top = 4))
+        }.apply { setCardBackgroundColor(attrColor(com.google.android.material.R.attr.colorSecondaryContainer)) })
+        addView(hbox {
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+            fun pickTopic(then: (String, Topics.Category?) -> Unit) {
+                val mine = Topics.suggested(context).map { it.asCategory }
+                val cats = (mine + Topics.categories).distinctBy { it.name }
+                MaterialAlertDialogBuilder(this@MainActivity).setTitle("Pick a topic")
+                    .setItems((listOf("🎲 Surprise me") + cats.map { "${it.emoji} ${it.name}" }).toTypedArray()) { _, i ->
+                        if (i == 0) { val (t, c) = Topics.surprise(); then(t, c) } else { val c = cats[i - 1]; then(Topics.pick(c), c) }
+                    }.show()
+            }
+            addView(button("⚡ 2-minute lesson") { pickTopic(::startQuick) }.apply { contentDescription = "Quick 2-minute lesson" }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
+            addView(outlined("⏱️ Challenge") { pickTopic(::startChallenge) }, LinearLayout.LayoutParams(0, -2, 1f))
+        })
+    }
 
     private fun home(): View = vbox(16) {
         pendingUpdate?.let { m ->
@@ -176,7 +208,8 @@ class MainActivity : BaseActivity() {
 
         if (mine.isNotEmpty()) {
             // ---- Your topics: the main section
-            addView(label("Your topics", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 4))
+            topOfHome(this)
+            addView(label("Your topics", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
             val g = grid(2)
             mine.forEach { s ->
                 val cat = s.asCategory
@@ -208,6 +241,7 @@ class MainActivity : BaseActivity() {
                     com.google.android.material.R.attr.textAppearanceBodyMedium, color = attrColor(com.google.android.material.R.attr.colorOnPrimaryContainer), top = 4))
                 addView(button("Import my topics") { importTopics() })
             }.apply { setCardBackgroundColor(attrColor(com.google.android.material.R.attr.colorPrimaryContainer)); strokeWidth = 0 })
+            topOfHome(this)
             addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
             val g = grid(3); builtIns(g, small = false); addView(g)
             addView(muted("Tap a tile to start a lesson right away · press and hold to choose a sub-topic", top = 4).apply { textSize = 12f })
@@ -261,7 +295,14 @@ class MainActivity : BaseActivity() {
         sheet.setContentView(ScrollView(this).apply {
             addView(vbox(20) {
                 addView(label("${cat.emoji} ${cat.name}", com.google.android.material.R.attr.textAppearanceTitleLarge))
-                addView(muted("Pick a sub-topic to start a lesson"))
+                addView(hbox {
+                    setPadding(0, dp(8), 0, 0)
+                    addView(button("⚡ 2-minute") { sheet.dismiss(); startQuick(Topics.pick(cat), cat) }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
+                    addView(outlined("⏱️ Challenge" + Challenge.best(context, cat.id).let { if (it > 0) " · 🏆$it" else "" }) { sheet.dismiss(); startChallenge(cat.name, cat) }, LinearLayout.LayoutParams(0, -2, 1f))
+                })
+                addView(depthSlider(Depths.get(context, cat.id)) { d -> Depths.set(this@MainActivity, cat.id, d) }.apply { setPadding(0, dp(12), 0, 0) })
+                addView(muted("Pick a sub-topic to start a lesson", top = 8))
                 addView(com.google.android.material.chip.ChipGroup(context).apply {
                     setPadding(0, dp(8), 0, 0)
                     cat.subtopics.forEach { t ->

@@ -214,7 +214,10 @@ open class BaseActivity : AppCompatActivity() {
     }
     open fun onTopicsChanged() {}
 
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(Display.wrap(newBase))
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(Display.themeRes(this))
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         providers = ProviderStore(this)
@@ -493,4 +496,30 @@ private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
     val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(16 * 1024); var total = 0
     while (total < max) { val n = read(buf, 0, minOf(buf.size, max - total)); if (n < 0) break; out.write(buf, 0, n); total += n }
     return out.toByteArray()
+}
+
+/**
+ * One-tap depth control: a 5-stop slider from "Like I'm 5" through "Normal" to "Expert" with the current choice named above it.
+ * Tap anywhere on the track to jump to that depth.
+ */
+fun Context.depthSlider(current: Depth, compact: Boolean = false, onChange: (Depth) -> Unit): View = vbox {
+    val name = label("", com.google.android.material.R.attr.textAppearanceTitleSmall, bold = true)
+    fun show(d: Depth) { name.text = "Depth: ${d.label}" }
+    show(current)
+    if (!compact) addView(name)
+    val slider = com.google.android.material.slider.Slider(context).apply {
+        valueFrom = 0f; valueTo = (Depth.entries.size - 1).toFloat(); stepSize = 1f; value = current.ordinal.toFloat()
+        setLabelFormatter { Depth.entries[it.toInt()].label }
+        contentDescription = "Lesson depth"
+        addOnChangeListener { _, v, fromUser -> val d = Depth.entries[v.toInt()]; show(d); if (fromUser) onChange(d) }
+    }
+    addView(slider, LinearLayout.LayoutParams(-1, -2))
+    addView(LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        listOf("Like I'm 5" to Gravity.START, "Normal" to Gravity.CENTER_HORIZONTAL, "Expert" to Gravity.END).forEach { (t, g) ->
+            addView(muted(t).apply { textSize = 12f; gravity = g }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        setPadding(dp(12), 0, dp(12), 0)
+    })
+    tag = slider
 }

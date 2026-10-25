@@ -14,11 +14,11 @@ object Prompts {
     }
 
     /** [source] is optional pasted/shared text the lesson must be based on. */
-    fun lesson(topic: String, d: Difficulty, len: LessonLength, source: String? = null, pathContext: String? = null): List<Msg> {
+    fun lesson(topic: String, d: Difficulty, len: LessonLength, source: String? = null, pathContext: String? = null, depth: Depth = Depth.NORMAL): List<Msg> {
         val src = source?.takeIf { it.isNotBlank() }?.let { "\nBase the lesson on this source material (summarise and teach it; fill gaps only if needed):\n\"\"\"\n${it.take(9000)}\n\"\"\"\n" } ?: ""
         val path = pathContext?.let { "\nThis lesson is one step of a learning path: $it\n" } ?: ""
         val user = """Create a lesson about: ${topic.take(300)}
-Audience: ${level(d)}. Length: ${len.label.lowercase()} (${len.concepts} key concepts).$path$src
+Audience: ${level(d)}. Length: ${len.label.lowercase()} (${len.concepts} key concepts).${depthLine(depth)}$path$src
 Return JSON with exactly these keys:
 {"title":"short lesson title","overview":"3-5 sentence summary","concepts":[{"title":"","explanation":"2-4 short sentences","analogy":"one simple analogy","example":"one concrete example"}],"glossary":[{"term":"","definition":"one sentence"}],"takeaways":["3-5 one-line key takeaways"],"flashcards":[{"front":"question","back":"short answer"}]}
 Give ${len.concepts} concepts, 4-8 glossary terms and ${len.cards} flashcards."""
@@ -36,10 +36,31 @@ Return JSON: {"questions":[{"type":"mcq","question":"","options":["","","",""],"
 "answer" for mcq is the 0-based index of the correct option. Vary the position of the correct option."""))
 
     /** Chat about a lesson. Only the most recent turns are sent, to stay within free-tier limits. */
-    fun chat(l: Lesson, history: List<Msg>, maxTurns: Int = 8): List<Msg> {
+    fun depthLine(depth: Depth) = if (depth == Depth.NORMAL) "" else "\nDepth: ${depth.label}. ${depth.prompt}"
+
+    fun chat(l: Lesson, history: List<Msg>, maxTurns: Int = 8, depth: Depth = Depth.NORMAL): List<Msg> {
         val sys = SYSTEM + "\nYou are tutoring the learner on this lesson. Answer in plain text (light markdown ok), concise (under ~200 words unless asked for more). " +
-            "If asked to explain simpler, use an everyday analogy and short sentences. If asked to go deeper, add mechanisms, nuance and precise terms.\n\n" + l.contextText()
+            "If asked to explain simpler, use an everyday analogy and short sentences. If asked to go deeper, add mechanisms, nuance and precise terms." + depthLine(depth) + "\n\n" + l.contextText()
         return listOf(Msg("system", sys)) + history.takeLast(maxTurns)
+    }
+
+    // ------------------------------------------------------------- v1.4: quick lessons, challenge, topic of the day
+
+    /** Quick 2-minute lesson: ~150 words, plain "TITLE:/SUMMARY:" format (parsed by parseLocalOverview), for every provider. */
+    fun quickLesson(topic: String, depth: Depth, local: Boolean): List<Msg> = listOf(Msg("system", if (local) LOCAL_SYSTEM else SYSTEM), Msg("user",
+        "Teach me \"${topic.take(200)}\" in about 150 words: the single most important idea, one everyday example, and one surprising fact." +
+            (if (local) (if (depth.local.isNotEmpty()) " " + depth.local else "") else depthLine(depth).replace("\n", " ")) +
+            "\nReply in exactly this format, no markdown:\nTITLE: <short title>\nSUMMARY: <the lesson, about 150 words>"))
+
+    /** One short fun fact for the widget's topic of the day. */
+    fun funFact(topic: String): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
+        "Tell me one short, surprising, true fun fact about \"${topic.take(120)}\". One sentence under 25 words. Reply with the sentence only."))
+
+    /** Cleans a model's fun-fact reply to one sentence, or null if unusable. */
+    fun parseFact(text: String): String? {
+        val t = stripThinking(text).lines().map { cleanLine(it) }.firstOrNull { it.length > 15 }?.removePrefix("Fun fact:")?.removePrefix("FACT:")?.trim()?.trim('"') ?: return null
+        val one = Regex("^(.{15,200}?[.!?])(\\s|$)").find(t)?.groupValues?.get(1) ?: t.take(160)
+        return one.takeIf { it.length >= 15 }
     }
 
     // ------------------------------------------------------------- parsing
@@ -113,13 +134,13 @@ Return JSON: {"questions":[{"type":"mcq","question":"","options":["","","",""],"
     private fun shortLevel(d: Difficulty) = when (d) { Difficulty.BEGINNER -> "a beginner"; Difficulty.INTERMEDIATE -> "a student who knows the basics"; Difficulty.EXPERT -> "an expert" }
     fun localConceptCount(len: LessonLength) = when (len) { LessonLength.SHORT -> 3; LessonLength.MEDIUM -> 4; LessonLength.LONG -> 5 }
 
-    fun localOverview(topic: String, d: Difficulty, source: String?): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
-        (if (!source.isNullOrBlank()) "Read this text:\n\"\"\"\n${source.take(2500)}\n\"\"\"\n\nSummarise it for ${shortLevel(d)}." else "Explain \"${topic.take(200)}\" to ${shortLevel(d)}.") +
+    fun localOverview(topic: String, d: Difficulty, source: String?, depth: Depth = Depth.NORMAL): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
+        (if (!source.isNullOrBlank()) "Read this text:\n\"\"\"\n${source.take(2500)}\n\"\"\"\n\nSummarise it for ${shortLevel(d)}." else "Explain \"${topic.take(200)}\" to ${shortLevel(d)}.") + (if (depth.local.isNotEmpty()) " " + depth.local else "") +
             "\nReply in exactly this format:\nTITLE: <short title>\nSUMMARY: <3 or 4 short sentences>"))
 
-    fun localConcepts(title: String, overview: String, d: Difficulty, n: Int, source: String?): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
+    fun localConcepts(title: String, overview: String, d: Difficulty, n: Int, source: String?, depth: Depth = Depth.NORMAL): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
         "Topic: $title\nSummary: ${overview.take(600)}\n" + (if (!source.isNullOrBlank()) "Source text: ${source.take(1500)}\n" else "") +
-            "\nList $n key ideas of this topic for ${shortLevel(d)}. For each idea write exactly these 4 lines:\n" +
+            "\nList $n key ideas of this topic for ${shortLevel(d)}.${if (depth.local.isNotEmpty()) " " + depth.local else ""} For each idea write exactly these 4 lines:\n" +
             "IDEA: <name>\nEXPLAIN: <2 short sentences>\nANALOGY: <compare it to something from everyday life>\nEXAMPLE: <one real example>"))
 
     fun localGlossary(title: String, ideas: List<String>): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
@@ -136,8 +157,8 @@ Return JSON: {"questions":[{"type":"mcq","question":"","options":["","","",""],"
     fun localPath(topic: String, d: Difficulty): List<Msg> = listOf(Msg("system", LOCAL_SYSTEM), Msg("user",
         "List 6 lesson titles that teach \"${topic.take(200)}\" step by step to ${shortLevel(d)}, from basics to advanced. One title per line, numbered 1 to 6. No other text."))
 
-    fun localChat(l: Lesson, history: List<Msg>): List<Msg> {
-        val sys = LOCAL_SYSTEM + " Answer in under 120 words.\nThe learner is studying: ${l.title}\n${l.overview.take(500)}\nKey ideas: ${l.concepts.joinToString(", ") { it.title }}"
+    fun localChat(l: Lesson, history: List<Msg>, depth: Depth = Depth.NORMAL): List<Msg> {
+        val sys = LOCAL_SYSTEM + " Answer in under 120 words." + (if (depth.local.isNotEmpty()) " " + depth.local else "") + "\nThe learner is studying: ${l.title}\n${l.overview.take(500)}\nKey ideas: ${l.concepts.joinToString(", ") { it.title }}"
         return listOf(Msg("system", sys)) + history.takeLast(4)
     }
 

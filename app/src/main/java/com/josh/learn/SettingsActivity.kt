@@ -157,11 +157,25 @@ class SettingsActivity : BaseActivity() {
             addView(muted("Default length"))
             addView(choiceChips(LessonLength.entries, enumOr(prefs.getString("length", null), LessonLength.MEDIUM), { it.label }) { prefs.edit { putString("length", it.name) } })
 
-            // ---------------- Appearance
-            addView(title("Theme"))
-            addView(choiceChips(listOf("system", "light", "dark"), prefs.getString("theme", "system")!!, { it.replaceFirstChar(Char::uppercase) }) {
-                prefs.edit { putString("theme", it) }; LearnApp.applyTheme(this@SettingsActivity)
+            // ---------------- Display
+            addView(title("Display"))
+            addView(muted("Theme"))
+            addView(choiceChips(Display.themes, Display.theme(context), { Display.themeLabel(it) }) {
+                prefs.edit { putString("theme", it) }; LearnApp.applyTheme(this@SettingsActivity); TopicsWidget.refresh(this@SettingsActivity); recreate()
             })
+            if (Display.theme(context) == "osrs") addView(textBtn("OSRS font: Pixelify Sans (SIL Open Font License)") {
+                val text = runCatching { assets.open("licenses/PixelifySans-OFL.txt").bufferedReader().readText() }.getOrDefault("")
+                MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Pixelify Sans — SIL OFL 1.1").setMessage(text).setPositiveButton(android.R.string.ok, null).show()
+            })
+            addView(muted("Text size", top = 8))
+            addView(choiceChips(Display.fontSizes.map { it.first }, Display.fontSize(context), { Display.fontLabel(it) }) {
+                prefs.edit { putString("font_size", it) }; recreate()
+            })
+            addView(MaterialSwitch(context).apply {
+                text = "Remember lesson depth per topic"; isChecked = Depths.perTopic(context)
+                setOnCheckedChangeListener { _, c -> prefs.edit { putBoolean("depth_per_topic", c) } }
+            })
+            addView(muted("Off: one depth (Like I'm 5 … Expert) for everything."))
 
             // ---------------- Reminder
             addView(title("Daily review reminder"))

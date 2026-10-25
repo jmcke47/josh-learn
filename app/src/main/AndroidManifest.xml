@@ -49,6 +49,8 @@
         <activity android:name=".QuizActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ChatActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ReviewActivity" android:exported="false" />
+        <activity android:name=".QuickActivity" android:exported="false" />
+        <activity android:name=".ChallengeActivity" android:exported="false" />
         <activity android:name=".PathActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
 

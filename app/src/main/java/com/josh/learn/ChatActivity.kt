@@ -40,7 +40,12 @@ class ChatActivity : BaseActivity() {
         val (til, et) = input("Ask a follow-up question", multiLine = true)
         input = et; et.maxLines = 4
         send = button("Send") { ask(et.text?.toString() ?: "") }
+        val depthKey = lesson.category ?: lesson.topic
+        val depthRow = depthSlider(Depths.get(this, depthKey), compact = true) { d -> Depths.set(this, depthKey, d); toast("Tutor answers: ${d.label}") }
+            .apply { setPadding(dp(8), 0, dp(8), 0) }
         val bottom = vbox {
+            addView(muted("Answer depth").apply { setPadding(dp(16), dp(4), 0, 0); textSize = 12f })
+            addView(depthRow)
             addView(HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
             addView(hbox {
                 setPadding(dp(12), 0, dp(12), dp(8))
@@ -116,7 +121,7 @@ class ChatActivity : BaseActivity() {
         busy = true; send.isEnabled = false; cancelled = false
         val tv = bubble("assistant", "…")
         scrollDown()
-        val messages = Gen.chat(cfg, lesson, lesson.chat)
+        val messages = Gen.chat(cfg, lesson, lesson.chat, Depths.get(this, lesson.category ?: lesson.topic))
         val acc = StringBuilder()
         var last = 0L
         io.execute {

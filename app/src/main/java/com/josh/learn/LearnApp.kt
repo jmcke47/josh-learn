@@ -11,7 +11,8 @@ class LearnApp : Application() {
     override fun onCreate() {
         super.onCreate()
         applyTheme(this)
-        DynamicColors.applyToActivitiesIfAvailable(this)
+        DynamicColors.applyToActivitiesIfAvailable(this, com.google.android.material.color.DynamicColorsOptions.Builder()
+            .setPrecondition { a, _ -> !Display.isCustom(a) }.build())
         Repo.init(this)
         Topics.init(this)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -34,7 +35,7 @@ class LearnApp : Application() {
         fun applyTheme(c: Context) {
             AppCompatDelegate.setDefaultNightMode(when (prefs(c).getString("theme", "system")) {
                 "light" -> AppCompatDelegate.MODE_NIGHT_NO
-                "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+                "dark", "amoled", "osrs" -> AppCompatDelegate.MODE_NIGHT_YES
                 else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             })
         }

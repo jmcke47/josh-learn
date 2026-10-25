@@ -3,7 +3,8 @@ package com.josh.learn
 import android.content.Intent
 
 /** Shared "make a lesson / path" flows used by the home tiles and the New lesson screen. */
-fun BaseActivity.createLesson(input: String, d: Difficulty, len: LessonLength, category: String? = null, finishAfter: Boolean = false) {
+fun BaseActivity.createLesson(input: String, d: Difficulty, len: LessonLength, category: String? = null, finishAfter: Boolean = false,
+                              depth: Depth = Depths.get(this, category ?: input)) {
     fun isSourceText(t: String) = t.length > 280 || t.count { it == '\n' } >= 3
     runAi("Creating your lesson…", task = { cfg, onDelta, cancelled ->
         var topic = input; var source: String? = null; var url: String? = null
@@ -19,7 +20,7 @@ fun BaseActivity.createLesson(input: String, d: Difficulty, len: LessonLength, c
         } else if (isSourceText(input)) {
             source = input; topic = "the provided text"
         }
-        val parsed = Gen.lesson(cfg, topic, d, len, source, null, onDelta, cancelled)
+        val parsed = Gen.lesson(cfg, topic, d, len, source, null, onDelta, cancelled, depth)
         if (parsed.lesson.topic.isEmpty() || parsed.lesson.topic == "the provided text") parsed.lesson.topic = parsed.lesson.title
         parsed.lesson.sourceUrl = url
         parsed.lesson.category = category

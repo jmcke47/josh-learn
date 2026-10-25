@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="8dp" android:background="@drawable/os_widget_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="6dp" android:paddingEnd="2dp" android:paddingBottom="4dp">
+        <TextView android:fontFamily="@font/pixelify_sans" android:shadowColor="#FF000000" android:shadowDx="2" android:shadowDy="2" android:shadowRadius="0.01" android:id="@+id/widget_header" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="📚 Josh Learn" android:textColor="@color/os_orange" android:textSize="15sp" android:textStyle="normal" android:maxLines="1" />
+        <TextView android:fontFamily="@font/pixelify_sans" android:shadowColor="#FF000000" android:shadowDx="2" android:shadowDy="2" android:shadowRadius="0.01" android:id="@+id/widget_due" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:background="@drawable/os_button_normal" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="3dp" android:paddingBottom="3dp"
+            android:text="🃏 0 due" android:textColor="@color/os_yellow" android:textSize="13sp" android:maxLines="1" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_tod" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_margin="4dp" android:background="@drawable/os_panel"
+        android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="8dp" android:paddingBottom="8dp">
+        <TextView android:fontFamily="@font/pixelify_sans" android:shadowColor="#FF000000" android:shadowDx="2" android:shadowDy="2" android:shadowRadius="0.01" android:id="@+id/tod_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="⭐ Topic of the day · 🔬 Science" android:textColor="@color/os_yellow" android:textSize="14sp" android:textStyle="normal"
+            android:maxLines="1" android:ellipsize="end" />
+        <TextView android:fontFamily="@font/pixelify_sans" android:shadowColor="#FF000000" android:shadowDx="2" android:shadowDy="2" android:shadowRadius="0.01" android:id="@+id/tod_fact" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
+            android:text="Tap for today's lesson." android:textColor="@color/os_yellow" android:textSize="13sp"
+            android:maxLines="3" android:ellipsize="end" android:hyphenationFrequency="none" />
+    </LinearLayout>
+    <GridView android:id="@+id/widget_grid" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:numColumns="2" android:stretchMode="columnWidth" android:horizontalSpacing="0dp" android:verticalSpacing="0dp"
+        android:scrollbars="none" android:clipToPadding="false" />
+    <TextView android:fontFamily="@font/pixelify_sans" android:shadowColor="#FF000000" android:shadowDx="2" android:shadowDy="2" android:shadowRadius="0.01" android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:gravity="center" android:text="Loading topics…" android:textColor="@color/os_orange" android:textSize="14sp" android:visibility="gone" />
+</LinearLayout>

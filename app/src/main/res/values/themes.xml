@@ -2,4 +2,28 @@
     <style name="Theme.JoshLearn" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/seed</item>
     </style>
+
+    <!-- AMOLED: pure black backgrounds (saves battery on OLED screens), near-black cards. -->
+    <style name="Theme.JoshLearn.Amoled" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#7FD6A8</item>
+        <item name="colorOnPrimary">#00391F</item>
+        <item name="colorPrimaryContainer">#0F3B27</item>
+        <item name="colorOnPrimaryContainer">#B9F2D2</item>
+        <item name="colorSecondaryContainer">#1A2A22</item>
+        <item name="colorOnSecondaryContainer">#D3E8DA</item>
+        <item name="android:colorBackground">#FF000000</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="colorSurface">#FF000000</item>
+        <item name="colorOnSurface">#FFE8E8E8</item>
+        <item name="colorOnSurfaceVariant">#FFB5B5B5</item>
+        <item name="colorSurfaceVariant">#FF161616</item>
+        <item name="colorSurfaceContainerLowest">#FF000000</item>
+        <item name="colorSurfaceContainerLow">#FF0A0A0A</item>
+        <item name="colorSurfaceContainer">#FF0F0F0F</item>
+        <item name="colorSurfaceContainerHigh">#FF151515</item>
+        <item name="colorSurfaceContainerHighest">#FF1C1C1C</item>
+        <item name="colorOutlineVariant">#FF262626</item>
+        <item name="android:statusBarColor">#FF000000</item>
+        <item name="android:navigationBarColor">#FF000000</item>
+    </style>
 </resources>
