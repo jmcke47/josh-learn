@@ -134,18 +134,22 @@ class SettingsActivity : BaseActivity() {
             // ---------------- Suggested topics (imported)
             addView(title("Your topics"))
             val mineList = Topics.suggested(context); val n = mineList.size
-            addView(muted(if (n > 0) "$n topics on your home screen. Stored privately on this phone. Re-importing replaces them." else "Import your Grok data export (.zip) or a topics file (.json) to fill \"Suggested for you\". It's analysed and kept on this phone."))
+            val nImported = Topics.imported(context).size
+            addView(muted(if (n > 0) "$n topics on your home screen, stored privately on this phone. Re-importing replaces the imported ones; topics you made yourself are kept."
+                else "Make your own topics, or import your Grok data export (.zip) or a topics file (.json). Everything is kept on this phone."))
             mineList.forEach { s -> addView(hbox {
-                addView(label("${s.emoji}  ${s.title}").apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
-                addView(textBtn("Remove") { Topics.removeImported(context, s.title); render() }.apply { contentDescription = "Remove ${s.title}" })
+                addView(label("${s.emoji}  ${s.title}" + if (s.isCustom) "  ·  yours" else "").apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                if (s.isCustom) addView(textBtn("Edit") { showTopicEditor(s) { render() } }.apply { contentDescription = "Edit ${s.title}" })
+                addView(textBtn(if (s.isCustom) "Delete" else "Remove") { confirmDeleteTopic(s) { render() } }.apply { contentDescription = "Remove ${s.title}" })
             }) }
+            addView(button("+ New topic") { showTopicEditor(null) { render() } })
             addView(hbox {
-                addView(outlined(if (n > 0) "Re-import" else "Import my topics") { importTopics() })
-                if (n > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Remove all") {
-                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Remove all your topics?")
-                        .setMessage("Removes all your topics from this phone. Lessons you made stay.")
+                addView(outlined(if (nImported > 0) "Re-import" else "Import my topics") { importTopics() })
+                if (nImported > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Remove imported") {
+                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Remove all imported topics?")
+                        .setMessage("Removes the topics imported from your Grok export. Topics you made yourself and lessons you made stay.")
                         .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton("Remove all") { _, _ -> Topics.clearImported(context); render() }.show()
+                        .setPositiveButton("Remove imported") { _, _ -> Topics.clearImported(context); render() }.show()
                 }) }
             })
 

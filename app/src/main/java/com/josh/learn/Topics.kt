@@ -32,9 +32,12 @@ object Topics {
 
     // ---- "Your topics": topics the user imports from a JSON file {topics:[{title,category,emoji,priority,subtopics[]}]}.
     // Nothing is bundled in the APK; the import is saved privately in filesDir (kept across app updates).
-    data class Suggested(val title: String, val category: String, val emoji: String, val priority: Int, val subtopics: List<String>) {
-        /** As a tile category (id prefixed "s:") so the sub-topic sheet, paths and lesson emoji all work. */
-        val asCategory get() = Category("s:" + title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-'), title, emoji, subtopics.ifEmpty { listOf(title) })
+    data class Suggested(val title: String, val category: String, val emoji: String, val priority: Int, val subtopics: List<String>,
+                         /** Set for topics Josh made himself ("c:…", stable across renames); null for imported ones. */
+                         val customId: String? = null, val description: String = "", val createdAt: Long = 0L) {
+        val isCustom get() = customId != null
+        /** As a tile category (id prefixed "s:", or "c:" for his own) so the sub-topic sheet, paths and lesson emoji all work. */
+        val asCategory get() = Category(customId ?: ("s:" + title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')), title, emoji, subtopics.ifEmpty { listOf(title) })
     }
 
     @Volatile private var suggestedCache: List<Suggested>? = null
@@ -52,13 +55,99 @@ object Topics {
 
     fun importedFile(c: Context) = java.io.File(c.applicationContext.filesDir, "suggested_topics.json")
 
-    fun suggested(c: Context): List<Suggested> = suggestedCache ?: runCatching {
+    /** Only the imported topics (from the Grok export / topics file). */
+    fun imported(c: Context): List<Suggested> = runCatching {
         importedFile(c).takeIf { it.exists() }?.readText()?.let { parseSuggested(it) } ?: emptyList()
-    }.getOrDefault(emptyList()).also { suggestedCache = it }
+    }.getOrDefault(emptyList())
+
+    /** "Your topics": Josh's own topics (newest first), then imported ones by priority. Same title: his own wins. */
+    fun suggested(c: Context): List<Suggested> = suggestedCache ?: (custom(c) + imported(c)).distinctBy { it.title.trim().lowercase() }.also { suggestedCache = it }
 
     const val MAX_IMPORT_BYTES = 1_000_000
 
     /** Parses [json] leniently and saves it privately. Returns the number of topics, or throws with a friendly message. */
+    // ---- Josh's own topics: filesDir/custom_topics.json (kept across app updates; importing never touches it)
+    fun customFile(c: Context) = java.io.File(c.applicationContext.filesDir, "custom_topics.json")
+    const val MAX_TITLE = 60; const val MAX_DESCRIPTION = 300
+
+    fun custom(c: Context): List<Suggested> = runCatching {
+        val arr = org.json.JSONObject(customFile(c).takeIf { it.exists() }?.readText() ?: return emptyList()).optJSONArray("topics") ?: return emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val title = o.optString("title").trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val desc = o.optString("description").trim()
+            Suggested(title, "Mine", o.optString("emoji").trim().ifEmpty { "⭐" }, 1000, customSubtopics(title, desc),
+                o.optString("id").ifEmpty { "c:" + title.lowercase().hashCode().toUInt().toString(16) }, desc, o.optLong("createdAt"))
+        }.sortedByDescending { it.createdAt }
+    }.getOrDefault(emptyList())
+
+    /** Lesson prompts for a custom topic: the title, or "title: what I want to learn"; extra lines of the description become sub-topics. */
+    fun customSubtopics(title: String, desc: String): List<String> {
+        val lines = desc.lines().map { it.trim().trimStart('-', '•', '*').trim() }.filter { it.length >= 3 }
+        return if (lines.size >= 2) lines.map { "$title: $it" } else listOf(if (desc.isBlank()) title else "$title: ${desc.trim()}")
+    }
+
+    private fun saveCustom(c: Context, list: List<Suggested>) {
+        val json = org.json.JSONObject().put("version", 1).put("topics", org.json.JSONArray().apply {
+            list.forEach { s -> put(org.json.JSONObject().put("id", s.customId).put("title", s.title).put("emoji", s.emoji)
+                .put("description", s.description).put("createdAt", s.createdAt)) }
+        }).toString(2)
+        val f = customFile(c); val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(json); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        suggestedCache = null; init(c); TopicsWidget.refresh(c)
+    }
+
+    /**
+     * Creates (id == null) or edits one of Josh's own topics. Returns it, or throws with a friendly message
+     * (empty name, or a name already used by another topic).
+     */
+    fun saveCustomTopic(c: Context, id: String?, title: String, emoji: String, description: String, now: Long = System.currentTimeMillis()): Suggested {
+        val t = title.trim().replace(Regex("\\s+"), " ").take(MAX_TITLE)
+        if (t.isEmpty()) throw IllegalArgumentException("Give your topic a name")
+        val all = custom(c)
+        if (suggested(c).any { it.title.equals(t, true) && it.customId != id }) throw IllegalArgumentException("You already have a topic called \"$t\"")
+        val d = description.trim().take(MAX_DESCRIPTION)
+        val old = all.firstOrNull { it.customId == id }
+        val s = Suggested(t, "Mine", emoji.trim().ifEmpty { suggestEmoji(t, d) }, 1000, customSubtopics(t, d),
+            id ?: ("c:" + java.util.UUID.randomUUID().toString().take(8)), d, old?.createdAt ?: now)
+        saveCustom(c, if (old != null) all.map { if (it.customId == id) s else it } else listOf(s) + all)
+        return s
+    }
+
+    fun deleteCustomTopic(c: Context, id: String): Boolean {
+        val all = custom(c); val rest = all.filterNot { it.customId == id }
+        if (rest.size == all.size) return false
+        saveCustom(c, rest); return true
+    }
+
+    /** Removes any of "Your topics" by title: his own topic is deleted, an imported one is removed from the import. */
+    fun remove(c: Context, title: String): Boolean {
+        custom(c).firstOrNull { it.title.equals(title, true) }?.let { return deleteCustomTopic(c, it.customId!!) }
+        return removeImported(c, title)
+    }
+
+    private val emojiRules: List<Pair<Regex, String>> = listOf(
+        "cars?\\b|4wd|4x4|engine|mechanic|ute|truck|drive" to "🚗", "motorbike|motorcycle" to "🏍️", "plane|fly|flying|aviation|pilot" to "✈️",
+        "boat|sail|fishing|fish" to "🎣", "cook|recipe|food|bak|kitchen|bbq" to "🍳", "coffee" to "☕", "beer|brew|wine" to "🍺",
+        "guitar|music|song|piano|drum|band" to "🎸", "paint|draw|arts?\\b|sketch" to "🎨", "photo|camera" to "📷", "film|movie|cinema" to "🎬",
+        "game|gaming|runescape|osrs|xbox|playstation|nintendo" to "🎮", "code|coding|program|python|kotlin|software|developer" to "💻",
+        "network|wifi|router|server|homelab|home lab|linux" to "🖥️", "phone|android|iphone|gadget" to "📱", "ai\\b|llm|machine learning|robot" to "🤖",
+        "electr|solar|battery|power|energy" to "🔋", "space|star|planet|astronom|nasa|rocket" to "🚀", "physics|quantum|atom" to "⚛️",
+        "chem|lab|dna|forensic|biolog|microscope" to "🔬", "health|fitness|gym|muscle|exercise|run\\b|running" to "💪", "sleep" to "😴", "medic|doctor|nurse|anatomy" to "🩺",
+        "brain|psych|mind|memory|habit" to "🧠", "money|invest|finance|budget|tax|super\\b|superannuation|shares|stock" to "💰", "crypto|bitcoin|blockchain" to "₿",
+        "history|ancient|war|roman|medieval" to "🏛️", "politic|government|election|laws?\\b" to "⚖️", "language|spanish|french|japanese|german|italian|words" to "🗣️",
+        "book|read|writ|poem|poetry|story" to "📚", "garden|plant|tree|grow" to "🌱", "dog|cat|pet|animal|wildlife|bird" to "🐾",
+        "ocean|sea\\b|reef|beach|surf" to "🌊", "weather|climate|storm" to "⛅", "travel|trip|country|geograph" to "🌏", "build|diy|wood|tool|carpent|weld" to "🔧",
+        "math|maths|algebra|calculus|number" to "➗", "ufo|alien|uap" to "🛸", "sport|footy|football|cricket|rugby|soccer" to "🏉",
+    ).map { (k, e) -> Regex("\\b(?:$k)", RegexOption.IGNORE_CASE) to e }
+
+    /** A fitting emoji for a new topic name (and description), or ⭐. */
+    fun suggestEmoji(title: String, description: String = ""): String =
+        emojiRules.firstOrNull { it.first.containsMatchIn(title) }?.second ?: emojiRules.firstOrNull { it.first.containsMatchIn(description) }?.second ?: "⭐"
+
+    val emojiChoices = listOf("⭐", "🚗", "✈️", "🎣", "🍳", "🎸", "🎨", "📷", "🎮", "💻", "🖥️", "📱", "🤖", "🔋", "🚀", "⚛️", "🔬", "💪", "🧠", "💰",
+        "🏛️", "⚖️", "🗣️", "📚", "🌱", "🐾", "🌊", "🌏", "🔧", "➗", "🛸", "🏉", "🎲", "💡")
+
     fun importJson(c: Context, json: String): Int {
         if (json.length > MAX_IMPORT_BYTES) throw IllegalArgumentException("That file is too big for a topics list.")
         val parsed = parseSuggested(json)
@@ -77,7 +166,7 @@ object Topics {
 
     /** Removes one imported topic (by title). Returns true if it was there. */
     fun removeImported(c: Context, title: String): Boolean {
-        val all = suggested(c); val rest = all.filterNot { it.title.equals(title, ignoreCase = true) }
+        val all = imported(c); val rest = all.filterNot { it.title.equals(title, ignoreCase = true) }
         if (rest.size == all.size) return false
         if (rest.isEmpty()) clearImported(c) else importJson(c, toJson(rest))
         return true

@@ -18,7 +18,10 @@ object TopicOfDay {
         val mine = Topics.suggested(c).map { TopicsWidget.Item(it.emoji, it.title, TopicsWidget.EXTRA_TOPIC, it.title) }
         val list = mine.ifEmpty { Topics.categories.map { TopicsWidget.Item(it.emoji, it.name, TopicsWidget.EXTRA_CATEGORY, it.id) } }
         if (list.isEmpty()) return null
-        return list[java.util.Random(day * 31 + 7).nextInt(list.size)]
+        // splitmix64 so neighbouring days are well spread (java.util.Random's first value is poor for nearby seeds)
+        var z = day + -0x61c8864680b583ebL
+        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L; z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L; z = z xor (z ushr 31)
+        return list[Math.floorMod(z, list.size.toLong()).toInt()]
     }
 
     private fun prefs(c: Context) = c.applicationContext.getSharedPreferences("tod", Context.MODE_PRIVATE)

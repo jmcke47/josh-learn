@@ -122,6 +122,8 @@ class MainActivity : BaseActivity() {
 
     override fun onProviderChanged() { super.onProviderChanged(); if (::content.isInitialized) render() }
 
+    fun newTopic() = showTopicEditor(null) { render() }
+
     private fun startTopic(topic: String, cat: Topics.Category?) =
         createLesson(topic, defaultDifficulty(), defaultLength(), category = cat?.id)
 
@@ -222,14 +224,24 @@ class MainActivity : BaseActivity() {
                         maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; textSize = 17f
                         hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE; breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
                         setPadding(0, dp(8), 0, 0) })
-                    addView(muted(next).apply { textSize = 13f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, dp(4), 0, 0) })
+                    addView(muted(next.removePrefix("${s.title}: ").replaceFirstChar { it.uppercase() }).apply { textSize = 13f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, dp(4), 0, 0) })
                 }
                 c.setOnLongClickListener { subtopicSheet(cat, removable = s.title); true }
                 c.contentDescription = s.title
                 place(g, c)
             }
+            // "+ New topic" tile at the end of Your topics
+            val add = card(top = 0, onClick = { newTopic() }) {
+                gravity = android.view.Gravity.CENTER
+                setPadding(dp(16), dp(18), dp(16), dp(18))
+                minimumHeight = dp(168)
+                addView(label("➕").apply { textSize = 40f; gravity = android.view.Gravity.CENTER })
+                addView(label("New topic", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true).apply { gravity = android.view.Gravity.CENTER; textSize = 17f; setPadding(0, dp(8), 0, 0) })
+                addView(muted("Make your own").apply { gravity = android.view.Gravity.CENTER; textSize = 13f })
+            }.apply { strokeWidth = dp(2); strokeColor = attrColor(androidx.appcompat.R.attr.colorPrimary); contentDescription = "+ New topic" }
+            place(g, add)
             addView(g)
-            addView(muted("Tap a topic to start a lesson · press and hold to pick a sub-topic or remove it", top = 4).apply { textSize = 12f })
+            addView(muted("Tap a topic to start a lesson · press and hold to edit, pick a sub-topic or delete it", top = 4).apply { textSize = 12f })
 
             addView(title("More to explore", top = 20))
             val more = grid(3); builtIns(more, small = true); addView(more)
@@ -241,6 +253,12 @@ class MainActivity : BaseActivity() {
                     com.google.android.material.R.attr.textAppearanceBodyMedium, color = attrColor(com.google.android.material.R.attr.colorOnPrimaryContainer), top = 4))
                 addView(button("Import my topics") { importTopics() })
             }.apply { setCardBackgroundColor(attrColor(com.google.android.material.R.attr.colorPrimaryContainer)); strokeWidth = 0 })
+            addView(card(top = 10, onClick = { newTopic() }) {
+                addView(label("✏️ Make your own topic", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true))
+                addView(label("Anything you want to learn: name it, pick an emoji, and it becomes your own tile here and on the widget.",
+                    com.google.android.material.R.attr.textAppearanceBodyMedium, top = 4))
+                addView(button("+ New topic") { newTopic() })
+            })
             topOfHome(this)
             addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
             val g = grid(3); builtIns(g, small = false); addView(g)
@@ -317,12 +335,13 @@ class MainActivity : BaseActivity() {
                     addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
                     addView(outlined("Learning path") { sheet.dismiss(); createPath(cat.name, defaultDifficulty()) })
                 })
-                if (removable != null) addView(textBtn("Remove from my topics") {
-                    sheet.dismiss()
-                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity).setTitle("Remove ${cat.emoji} ${cat.name}?")
-                        .setMessage("It disappears from Your topics. Lessons you already made stay. You can re-import any time in Settings.")
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton("Remove") { _, _ -> Topics.removeImported(this@MainActivity, removable); render() }.show()
+                val mineTopic = Topics.suggested(context).firstOrNull { it.asCategory.id == cat.id }
+                if (mineTopic != null) addView(hbox {
+                    setPadding(0, dp(8), 0, 0)
+                    if (mineTopic.isCustom) {
+                        addView(textBtn("✏️ Edit topic") { sheet.dismiss(); showTopicEditor(mineTopic) { render() } })
+                        addView(textBtn("🗑️ Delete topic") { sheet.dismiss(); confirmDeleteTopic(mineTopic) { render() } })
+                    } else addView(textBtn("Remove from my topics") { sheet.dismiss(); confirmDeleteTopic(mineTopic) { render() } })
                 })
             })
         })

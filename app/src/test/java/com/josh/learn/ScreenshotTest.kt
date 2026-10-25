@@ -363,6 +363,107 @@ class ScreenshotTest {
         } finally { LocalModels.abiOverride = true }
     }
 
+    // ================================================================= v1.4.1: Josh's own topics
+
+    @Test fun customTopicsModel() {
+        assertEquals("🔧", Topics.suggestEmoji("Welding basics")); assertEquals("🍳", Topics.suggestEmoji("Sourdough baking"))
+        assertEquals("🚗", Topics.suggestEmoji("Fixing my car")); assertTrue(Topics.suggestEmoji("Lab career") != "🚗")
+        assertEquals("⭐", Topics.suggestEmoji("Zxq")); assertEquals("🎸", Topics.suggestEmoji("Zxq", "learn guitar chords"))
+        val w = Topics.saveCustomTopic(ctx, null, "  Welding   basics ", "", "MIG vs TIG\nReading a weld", now = 1000)
+        assertEquals("Welding basics", w.title); assertEquals("🔧", w.emoji); assertTrue(w.customId!!.startsWith("c:"))
+        assertEquals(listOf("Welding basics: MIG vs TIG", "Welding basics: Reading a weld"), w.subtopics)
+        val sd = Topics.saveCustomTopic(ctx, null, "Sourdough", "🍞", "", now = 2000)
+        assertEquals(listOf("Sourdough"), sd.subtopics)
+        Topics.importJson(ctx, sample)
+        // newest of his own first, then imported
+        assertEquals(listOf("Sourdough", "Welding basics", "4WD & Car Mechanics", "Home Lab & Networking"), Topics.suggested(ctx).map { it.title })
+        // re-importing / clearing imports never touches his own topics
+        Topics.importJson(ctx, sample); Topics.clearImported(ctx)
+        assertEquals(listOf("Sourdough", "Welding basics"), Topics.suggested(ctx).map { it.title })
+        assertTrue(Topics.customFile(ctx).exists() && !Topics.importedFile(ctx).exists())
+        // validation
+        assertEquals("Give your topic a name", runCatching { Topics.saveCustomTopic(ctx, null, "  ", "", "") }.exceptionOrNull()?.message)
+        assertTrue(runCatching { Topics.saveCustomTopic(ctx, null, "sourdough", "", "") }.exceptionOrNull()!!.message!!.contains("already have"))
+        // edit keeps id and position
+        val e = Topics.saveCustomTopic(ctx, w.customId, "Welding & fabrication", "🔥", "", now = 9999)
+        assertEquals(w.customId, e.customId); assertEquals(1000, e.createdAt)
+        assertEquals(listOf("Sourdough", "Welding & fabrication"), Topics.suggested(ctx).map { it.title })
+        assertEquals("Welding & fabrication", Topics.category(w.customId)!!.name) // lessons/paths/sheet can find it
+        // used everywhere: widget grid, topic of the day
+        assertTrue(TopicsWidget.items(ctx).take(2).map { it.title } == listOf("Sourdough", "Welding & fabrication"))
+        assertTrue((0L..20L).map { TopicOfDay.pick(ctx, it)!!.title }.toSet() == setOf("Sourdough", "Welding & fabrication"))
+        // delete
+        assertTrue(Topics.remove(ctx, "Sourdough")); assertTrue(!Topics.deleteCustomTopic(ctx, sd.customId!!))
+        assertEquals(listOf("Welding & fabrication"), Topics.suggested(ctx).map { it.title })
+        // imported topics can be removed the same way
+        Topics.importJson(ctx, sample); assertTrue(Topics.remove(ctx, "Home Lab & Networking"))
+        assertEquals(listOf("Welding & fabrication", "4WD & Car Mechanics"), Topics.suggested(ctx).map { it.title })
+        Topics.deleteCustomTopic(ctx, w.customId!!)
+    }
+
+    private fun dialogShot(d: androidx.appcompat.app.AlertDialog, name: String) {
+        idle(); val v = d.window!!.decorView
+        val w = (ctx.resources.displayMetrics.widthPixels * 0.92).toInt()
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        v.layout(0, 0, w, v.measuredHeight)
+        snapView(v, name)
+    }
+
+    @Test fun newTopicFlow() {
+        LocalModels.abiOverride = false
+        try {
+            val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+            var t = texts(a.window.decorView)
+            assertTrue(t.contains("✏️ Make your own topic") && t.contains("+ New topic") && t.contains("📥 Import your Grok history")) // empty state offers both
+            a.newTopic(); idle()
+            val d = lastTopicEditor!!
+            val dt = texts(d.window!!.decorView)
+            assertTrue(dt.contains("New topic") && dt.contains("Create topic") && dt.contains("Starting depth (optional)"))
+            // empty name: stays open with an error
+            d.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick(); idle()
+            assertTrue(d.isShowing && texts(d.window!!.decorView).contains("Give your topic a name"))
+            fun edits(v: View): List<android.widget.EditText> = when (v) { is android.widget.EditText -> listOf(v); is android.view.ViewGroup -> (0 until v.childCount).flatMap { edits(v.getChildAt(it)) }; else -> emptyList() }
+            val (name, desc) = edits(d.window!!.decorView)
+            name.setText("Welding basics"); desc.setText("MIG vs TIG\nHow to read a weld bead"); idle()
+            assertTrue(texts(d.window!!.decorView).contains("🔧")) // emoji auto-suggested from the name
+            dialogShot(d, "19-new-topic-dialog")
+            d.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick(); idle()
+            assertTrue(!d.isShowing)
+            t = texts(a.window.decorView)
+            assertTrue(t.contains("Your topics") && t.contains("Welding basics") && t.contains("New topic")) // shows like an imported topic, plus the + tile
+            assertEquals("Welding basics", Topics.suggested(ctx).first().title)
+            val f = System.getProperty("topics.file").orEmpty()
+            Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+            Topics.saveCustomTopic(ctx, null, "Sourdough baking", "", "Starter care\nShaping a loaf")
+            a.onTopicsChanged(); idle()
+            t = texts(a.window.decorView)
+            assertTrue(t.indexOf("Sourdough baking") < t.indexOf("Welding basics") && t.indexOf("Welding basics") < t.indexOf(Topics.imported(ctx).first().title))
+            snap(a, "20-home-custom-topic")
+            val wv = widgetView(340, 640)
+            assertEquals(listOf("Sourdough baking", "Welding basics"), visibleTiles(wv).take(2))
+            snapView(wv, "21-widget-custom-topic")
+            // edit + delete with confirmation
+            val mine = Topics.suggested(ctx).first { it.title == "Welding basics" }
+            a.showTopicEditor(mine) { }; idle()
+            assertTrue(texts(lastTopicEditor!!.window!!.decorView).contains("Edit topic"))
+            lastTopicEditor!!.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).performClick(); idle()
+            assertTrue(texts(lastTopicEditor!!.window!!.decorView).contains("Delete 🔧 Welding basics?"))
+            lastTopicEditor!!.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick(); idle()
+            assertTrue(Topics.suggested(ctx).none { it.title == "Welding basics" })
+        } finally { LocalModels.abiOverride = true }
+    }
+
+    @Test fun newTopicDialogOsrsAndXl() {
+        org.robolectric.RuntimeEnvironment.setQualifiers("+night")
+        LearnApp.prefs(ctx).edit().putString("theme", "osrs").putString("font_size", "xlarge").commit()
+        Topics.saveCustomTopic(ctx, null, "Welding basics", "", "")
+        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get(); idle()
+        assertEquals(1.3f, a.resources.configuration.fontScale, 0.01f)
+        assertTrue(texts(a.window.decorView).contains("🔧  Welding basics  ·  yours"))
+        a.showTopicEditor(null) { }; idle()
+        dialogShot(lastTopicEditor!!, "19-new-topic-dialog-osrs-xl")
+    }
+
     @Test fun widgetTapStartsLesson() {
         Topics.importJson(ctx, sample)
         val intent = android.content.Intent(ctx, MainActivity::class.java).setAction(TopicsWidget.ACTION_TOPIC)
@@ -439,7 +540,7 @@ class ScreenshotTest {
         assertEquals(2, Topics.suggested(ctx).size) // a bad file doesn't wipe the good one
         val s = Robolectric.buildActivity(SettingsActivity::class.java).setup().get(); idle()
         val t = texts(s.window.decorView)
-        assertTrue(t.contains("Remove all") && t.contains("Re-import"))
+        assertTrue(t.contains("Remove imported") && t.contains("Re-import"))
         Topics.clearImported(ctx)
         assertTrue(!f.exists() && Topics.suggested(ctx).isEmpty())
     }
