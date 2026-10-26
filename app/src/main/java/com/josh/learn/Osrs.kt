@@ -77,34 +77,17 @@ fun Context.paper(top: Int = 10, onClick: ((View) -> Unit)? = null, block: Linea
     c.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top) }
     onClick?.let { c.setOnClickListener(it) }
     c.block()
-    inkify(c)
+    com.josh.oldschool.Os.parchmentize(c) // kit: ink text, no shadows, link-ink text buttons
     return c
 }
 
-/** Parchment text: kit Ink appearances (first line = LessonTitle, rest = LessonBody, muted = ink brown), links in link-ink. */
-fun Context.inkify(v: View) {
-    var first = true
-    fun walk(v: View) {
-        when (v) {
-            is android.widget.CompoundButton -> {
-                v.setTextColor(getColor(R.color.os_ink)); v.setShadowLayer(0f, 0f, 0f, 0)
-                v.buttonDrawable = ContextCompat.getDrawable(this, R.drawable.os_checkbox)
-                if (v is androidx.appcompat.widget.AppCompatCheckBox) v.buttonTintList = null
-            }
-            is Button -> { v.setTextColor(getColor(R.color.os_link_ink)); v.setShadowLayer(0f, 0f, 0f, 0); first = false }
-            is TextView -> {
-                val muted = v.currentTextColor == getColor(R.color.os_cyan)
-                if (first && v.text.length < 80) v.setTextAppearance(R.style.TextAppearance_OldSchool_LessonTitle)
-                else { val size = v.textSize; v.setTextAppearance(R.style.TextAppearance_OldSchool_LessonBody); v.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, size) }
-                if (muted) v.setTextColor(getColor(R.color.os_ink_brown))
-                v.setShadowLayer(0f, 0f, 0f, 0)
-                first = false
-            }
-            is ViewGroup -> for (i in 0 until v.childCount) walk(v.getChildAt(i))
-        }
-    }
-    walk(v)
-}
+/** Chips: the kit's stone chips (OsChips) in OSRS, Material chips otherwise. kind = "assist" | "choice" | "filter". */
+fun Context.appChip(kind: String = "assist", text: CharSequence = ""): com.google.android.material.chip.Chip =
+    if (isOsrs()) when (kind) {
+        "choice" -> com.josh.oldschool.OsChips.choice(this, text)
+        "filter" -> com.josh.oldschool.OsChips.filter(this, text)
+        else -> com.josh.oldschool.OsChips.assist(this, text)
+    } else com.google.android.material.chip.Chip(this, null, com.google.android.material.R.attr.chipStyle).apply { this.text = text }
 
 /** Learning XP per topic, on the classic public XP curve (kit OsXp). Earned in every theme, shown in OSRS. */
 object LearnXp {

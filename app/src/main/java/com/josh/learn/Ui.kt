@@ -101,7 +101,7 @@ fun Context.input(hint: String, multiLine: Boolean = false, password: Boolean = 
 fun <T> Context.choiceChips(items: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) = ChipGroup(this).apply {
     isSingleSelection = true; isSelectionRequired = true
     items.forEach { item ->
-        addView(Chip(context, null, com.google.android.material.R.attr.chipStyle).apply {
+        addView(appChip("choice").apply {
             text = label(item); isCheckable = true; isChecked = item == selected
             setEnsureMinTouchTargetSize(true)
             setOnCheckedChangeListener { _, c -> if (c) onSelect(item) }

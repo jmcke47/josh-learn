@@ -82,17 +82,9 @@ class ChatActivity : BaseActivity() {
     private fun bubble(role: String, text: String): TextView {
         val mine = role == "user"
         val tv = label(format(text)).apply { setTextIsSelectable(true) }
-        if (isOsrs()) { // chatbox line: coloured speaker name, then the message (classic public-chat colours, no shadow on parchment)
-            tv.setTextColor(getColor(if (mine) R.color.os_chat_blue else R.color.os_ink)); tv.setShadowLayer(0f, 0f, 0f, 0)
-            tv.typeface = com.josh.oldschool.Os.font(this)
-            val row = vbox {
-                setBackgroundResource(R.drawable.os_chat_row); setPadding(dp(8), dp(4), dp(8), dp(6))
-                addView(label(if (mine) "You:" else "Tutor:", bold = true).apply {
-                    setTextColor(getColor(if (mine) R.color.os_ink else R.color.os_chat_red)); setShadowLayer(0f, 0f, 0f, 0)
-                    typeface = com.josh.oldschool.Os.font(this@ChatActivity, true) })
-                addView(tv)
-            }
-            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        if (isOsrs()) { // kit chat line (OsChat): coloured speaker + message on os_chat_row, inside the carved chatbox
+            setLine(tv, role, format(text))
+            list.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
             return tv
         }
         val card = MaterialCardView(this).apply {
@@ -105,6 +97,15 @@ class ChatActivity : BaseActivity() {
             if (mine) marginStart = dp(48) else marginEnd = dp(24)
         })
         return tv
+    }
+
+    /** Sets a message's text; in OSRS re-binds the kit chat line so the speaker prefix and colours stay. */
+    private fun setLine(tv: TextView, role: String, text: CharSequence) {
+        if (!isOsrs()) { tv.text = text; return }
+        val mine = role == "user"
+        com.josh.oldschool.OsChat.bind(tv, if (mine) "You" else "Tutor", text,
+            speakerColor = getColor(if (mine) R.color.os_ink else R.color.os_chat_red),
+            messageColor = getColor(if (mine) R.color.os_chat_blue else R.color.os_ink))
     }
 
     /** Tiny markdown: **bold**, leading "- "/"* " bullets, "#" headings. */
@@ -148,10 +149,10 @@ class ChatActivity : BaseActivity() {
         io.execute {
             val r = runCatching {
                 AiClient.complete(cfg, messages, { d ->
-                    if (d.startsWith(AiClient.STATUS)) { val s = d.substring(1); main.post { if (acc.isEmpty()) tv.text = s }; return@complete }
+                    if (d.startsWith(AiClient.STATUS)) { val s = d.substring(1); main.post { if (acc.isEmpty()) setLine(tv, "assistant", s) }; return@complete }
                     synchronized(acc) { acc.append(d) }
                     val now = System.currentTimeMillis()
-                    if (now - last > 120) { last = now; val s = synchronized(acc) { acc.toString() }; main.post { tv.text = format(s); scrollDown() } }
+                    if (now - last > 120) { last = now; val s = synchronized(acc) { acc.toString() }; main.post { setLine(tv, "assistant", format(s)); scrollDown() } }
                 }, { cancelled || isFinishing })
             }
             main.post {
@@ -159,13 +160,13 @@ class ChatActivity : BaseActivity() {
                 busy = false; send.isEnabled = true
                 r.onSuccess { full0 ->
                     val full = Prompts.stripThinking(full0)
-                    tv.text = format(full)
+                    setLine(tv, "assistant", format(full))
                     lesson.chat += Msg("assistant", full)
                     while (lesson.chat.size > 40) lesson.chat.removeAt(0)
                     Repo.save(); scrollDown()
                 }
                 r.onFailure { e ->
-                    list.removeView(tv.parent as android.view.View)
+                    list.removeView(if (tv.parent === list) tv else tv.parent as android.view.View)
                     showAiError(e, cfg.provider) { p -> ask(q, p, resend = true) }
                 }
             }

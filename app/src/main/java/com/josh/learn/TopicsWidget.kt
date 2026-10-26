@@ -84,17 +84,15 @@ class TopicsWidget : AppWidgetProvider() {
             return v
         }
 
-        /** OSRS tile: the kit's RemoteViews inventory slot (os_rv_inventory_slot) with a 2-line pixel-font label and the topic's level. */
+        /** OSRS tile: the kit's stretchable RemoteViews inventory slot with a 2-line pixel-font label and the topic's level. */
         fun osTile(c: Context, item: Item, slot: Int, g: Grid): RemoteViews {
-            val v = RemoteViews(c.packageName, R.layout.widget_topic_slot_osrs)
-            val wPx = ((g.tileWidthDp - 14) * c.resources.displayMetrics.density).toInt()
+            val v = RemoteViews(c.packageName, com.josh.oldschool.R.layout.os_rv_inventory_slot_wide)
+            val wPx = ((g.tileWidthDp - 4) * c.resources.displayMetrics.density).toInt()
             val level = if (item.extraKey == EXTRA_SPECIAL) 0 else LearnXp.level(c, if (item.extraKey == EXTRA_CATEGORY) item.extraValue
                 else Topics.suggested(c).firstOrNull { it.title == item.extraValue }?.asCategory?.id ?: item.extraValue)
-            com.josh.oldschool.OsRemote.slot(c, v, item.emoji, null, level, wPx)
-            // Kit slot labels are one line; long topic names need two, so render the label here (same font, colour and shadow).
-            com.josh.oldschool.OsRemote.pixelText(c, v, com.josh.oldschool.R.id.os_slot_label, item.title, 12f, c.getColor(R.color.os_yellow), wPx, maxLines = 2)
+            com.josh.oldschool.OsRemote.slot(c, v, item.emoji, item.title, level, wPx, labelMaxLines = 2, labelSp = 13f)
             v.setTextViewTextSize(com.josh.oldschool.R.id.os_slot_emoji, TypedValue.COMPLEX_UNIT_SP, if (g.tileHeightDp >= 135) 44f else 38f)
-            if (Build.VERSION.SDK_INT >= 31) v.setViewLayoutHeight(R.id.tile_slot_frame, g.tileHeightDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+            if (Build.VERSION.SDK_INT >= 31) v.setViewLayoutHeight(com.josh.oldschool.R.id.os_slot, g.tileHeightDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
             v.setContentDescription(com.josh.oldschool.R.id.os_slot, "Learn ${item.title}")
             v.setOnClickFillInIntent(com.josh.oldschool.R.id.os_slot, Intent().setData(Uri.parse("joshlearn://widget/$slot")).putExtra(item.extraKey, item.extraValue))
             return v

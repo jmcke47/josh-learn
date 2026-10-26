@@ -62,6 +62,7 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
             // ./gradlew testDebugUnitTest -PscreensDir=/path renders Robolectric screenshots there.
+            it.maxHeapSize = "2g" // ~90 Robolectric screenshot tests at xxhdpi outgrow the 512 MB default
             it.systemProperty("screens.dir", (project.findProperty("screensDir") as String?) ?: "")
             it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
             it.systemProperty("topics.file", (project.findProperty("topicsFile") as String?) ?: "")

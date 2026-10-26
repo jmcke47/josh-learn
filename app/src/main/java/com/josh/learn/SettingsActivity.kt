@@ -116,7 +116,7 @@ class SettingsActivity : BaseActivity() {
             addView(ChipGroup(context).apply {
                 isSingleSelection = true
                 Provider.visible.forEach { p ->
-                    addView(Chip(context, null, com.google.android.material.R.attr.chipStyle).apply {
+                    addView(appChip("choice").apply {
                         id = View.generateViewId(); isCheckable = true
                         text = p.short + if (providers.isReady(p)) "" else " (not set up)"
                         isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || (p == Provider.LOCAL && LocalModels.supported(context))
@@ -244,7 +244,7 @@ class SettingsActivity : BaseActivity() {
         if (p.defaultModel.isNotEmpty()) modelTil.helperText = "Default: ${p.defaultModel}" + if (p == Provider.GEMINI) " (free tier)" else ""
         addView(modelTil)
         if (p.suggestions.isNotEmpty()) addView(ChipGroup(context).apply {
-            p.suggestions.forEach { m -> addView(Chip(context).apply { text = m; setOnClickListener { modelEt.setText(m) } }) }
+            p.suggestions.forEach { m -> addView(appChip("assist", m).apply { setOnClickListener { modelEt.setText(m) } }) }
         })
         fun save(): Boolean {
             val key = keyEt.text?.toString()?.replace(Regex("\\s"), "") ?: ""

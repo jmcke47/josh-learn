@@ -32,7 +32,7 @@ fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (T
     fun suggestions() = (listOf(Topics.suggestEmoji(name.text.toString(), desc.text.toString())) + Topics.emojiChoices).distinct()
     fun fillChips() {
         chips.removeAllViews()
-        suggestions().forEach { e -> chips.addView(Chip(this).apply {
+        suggestions().forEach { e -> chips.addView(appChip("choice").apply {
             text = e; textSize = 20f; isCheckable = true; isChecked = e == emoji; contentDescription = "Use $e"
             setOnClickListener { setEmoji(e, true) }
         }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }) }

@@ -27,6 +27,8 @@ class ScreenshotTest {
     private val dir = System.getProperty("screens.dir").orEmpty()
     private val ctx get() = ApplicationProvider.getApplicationContext<android.app.Application>()
 
+    @org.junit.After fun tidyKit() = com.josh.oldschool.OsAnimations.reset()
+
     @Before fun seed() {
         LearnApp.prefs(ctx).edit().putBoolean("offline_setup_shown", true).putBoolean("notif_asked", true).commit()
         ModelDownloader.update(ModelDownloader.State())
@@ -397,6 +399,8 @@ class ScreenshotTest {
             val slots = findAll(home.window.decorView) { it is com.josh.oldschool.OsInventorySlot }
             assertTrue(slots.size >= 3)
             assertTrue((slots[0] as com.josh.oldschool.OsInventorySlot).count > 1)
+            val nav = findAll(home.window.decorView) { it is com.google.android.material.bottomnavigation.BottomNavigationView }.single() as com.google.android.material.bottomnavigation.BottomNavigationView
+            assertTrue(nav.itemIconTintList == null && !nav.isItemActiveIndicatorEnabled) // kit OsBottomNav.style
             snap(home, "30-osrs-home")
             slots[0].performLongClick(); idle()
             val menu = lastMenu!!; assertTrue(menu.isShowing)
@@ -420,7 +424,7 @@ class ScreenshotTest {
 
             // Tutor: carved chatbox with coloured speaker names and chat tabs
             val ch = Robolectric.buildActivity(ChatActivity::class.java, android.content.Intent(ctx, ChatActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
-            val ct = texts(ch.window.decorView); assertTrue(ct.contains("You:") && ct.contains("Tutor:") && ct.contains("Explain simpler"))
+            val ct = texts(ch.window.decorView); assertTrue(ct.any { it.startsWith("You: Why") } && ct.any { it.startsWith("Tutor: Because") } && ct.contains("Explain simpler"))
             snap(ch, "33-osrs-tutor-chat")
 
             // Quiz: OsAnswerButtons + XP drop on a correct answer
@@ -429,14 +433,14 @@ class ScreenshotTest {
                 Prompts.Question.Mcq("Where is the Haldex unit?", listOf("By the rear diff", "In the gearbox", "Behind the dash", "In the boot"), 0, "")))
             idle()
             assertTrue(findAll(q.window.decorView) { it is com.josh.oldschool.OsAnswerButton }.size == 4)
+            com.josh.oldschool.OsAnimations.freeze(0.4f) // hold kit animations at 40% (real frame, nothing posed)
             q.answer(0)
             assertEquals(com.josh.oldschool.OsAnswerButton.Result.CORRECT, (findAll(q.window.decorView) { it is com.josh.oldschool.OsAnswerButton }[0] as com.josh.oldschool.OsAnswerButton).result)
             assertEquals("+25", (findAll(q.window.decorView) { it.tag == "os_xp_drop" }.single() as android.widget.TextView).text.toString())
-            // Robolectric finishes the kit's AnimatorSet on its first frame, so pose the drop at a mid-flight frame
-            // (fully visible, ~90 dp up the right edge) for the screenshot; the real animation runs 1.7 s on a phone.
             val dv = findAll(q.window.decorView) { it.tag == "os_xp_drop" }.single()
-            dv.alpha = 1f; dv.translationY = -q.dp(90).toFloat()
+            assertTrue(dv.alpha > 0.9f && dv.translationY < -q.dp(40)) // held mid-rise by the kit's OsAnimations.freeze
             snapView(q.window.decorView, "34-osrs-quiz-xp-drop")
+            com.josh.oldschool.OsAnimations.release()
             lp.idleFor(java.time.Duration.ofSeconds(2)); assertTrue(findAll(q.window.decorView) { it.tag == "os_xp_drop" }.isEmpty()) // floats away
 
             // Challenge: kit timer orb, then the level-up banner when the run levels the topic up
@@ -461,7 +465,10 @@ class ScreenshotTest {
             val ssv = findScroll(s.window.decorView)!!
             val disp = findAll(ssv) { it is android.widget.TextView && it.text.toString() == "Display" }.first()
             var yy = 0; var xx: View? = disp; while (xx != null && xx !== ssv) { yy += xx.top; xx = xx.parent as? View }
-            ssv.scrollTo(0, yy - s.dp(8)); snap(s, "37-osrs-settings")
+            ssv.scrollTo(0, yy - s.dp(8))
+            val osChip = findAll(s.window.decorView) { it is com.google.android.material.chip.Chip && it.text.toString() == "OSRS" }.single() as com.google.android.material.chip.Chip
+            assertTrue(osChip.isChecked) // kit choice chip (red face when checked)
+            snap(s, "37-osrs-settings")
 
             // Widget at a large size (single frame restyled in place: carved frame, pixel title, inventory-slot tiles)
             val wv = widgetView(400, 760)

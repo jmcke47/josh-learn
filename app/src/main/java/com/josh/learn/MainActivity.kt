@@ -35,11 +35,11 @@ class MainActivity : BaseActivity() {
             menu.add(0, TAB_REVIEW, 2, "Review").setIcon(R.drawable.ic_review)
             setOnItemSelectedListener { tab = it.itemId; render(); true }
         }
-        if (isOsrs()) nav.apply { // kit side-panel strip under the screen
-            setBackgroundResource(R.drawable.os_side_panel)
-            itemTextColor = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(getColor(R.color.os_white), getColor(R.color.os_orange)))
-            itemIconTintList = itemTextColor
-            itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(getColor(R.color.os_dialog_red))
+        if (isOsrs()) { // kit bottom nav: stone side-tab squares on the side panel, pixel icons + pixel labels
+            nav.menu.findItem(TAB_HOME).setIcon(R.drawable.os_ic_book)
+            nav.menu.findItem(TAB_LIBRARY).setIcon(R.drawable.os_ic_scroll)
+            nav.menu.findItem(TAB_REVIEW).setIcon(R.drawable.os_ic_tick_scroll)
+            com.josh.oldschool.OsBottomNav.style(nav, labeled = true)
         }
         screen(getString(R.string.app_name), content, back = false, bottom = nav)
         tab = savedInstanceState?.getInt("tab") ?: TAB_HOME
@@ -370,7 +370,7 @@ class MainActivity : BaseActivity() {
                 addView(com.google.android.material.chip.ChipGroup(context).apply {
                     setPadding(0, dp(8), 0, 0)
                     cat.subtopics.forEach { t ->
-                        addView(com.google.android.material.chip.Chip(context).apply {
+                        addView(appChip("assist").apply {
                             text = (if (t.lowercase() in done) "✓ " else "") + t
                             setOnClickListener { sheet.dismiss(); startTopic(t, cat) }
                         })
