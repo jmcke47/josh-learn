@@ -35,6 +35,12 @@ class MainActivity : BaseActivity() {
             menu.add(0, TAB_REVIEW, 2, "Review").setIcon(R.drawable.ic_review)
             setOnItemSelectedListener { tab = it.itemId; render(); true }
         }
+        if (isOsrs()) nav.apply { // kit side-panel strip under the screen
+            setBackgroundResource(R.drawable.os_side_panel)
+            itemTextColor = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(getColor(R.color.os_white), getColor(R.color.os_orange)))
+            itemIconTintList = itemTextColor
+            itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(getColor(R.color.os_dialog_red))
+        }
         screen(getString(R.string.app_name), content, back = false, bottom = nav)
         tab = savedInstanceState?.getInt("tab") ?: TAB_HOME
         nav.selectedItemId = tab
@@ -146,7 +152,7 @@ class MainActivity : BaseActivity() {
             fun pickTopic(then: (String, Topics.Category?) -> Unit) {
                 val mine = Topics.suggested(context).map { it.asCategory }
                 val cats = (mine + Topics.categories).distinctBy { it.name }
-                MaterialAlertDialogBuilder(this@MainActivity).setTitle("Pick a topic")
+                appDialog(this@MainActivity).setTitle("Pick a topic")
                     .setItems((listOf("🎲 Surprise me") + cats.map { "${it.emoji} ${it.name}" }).toTypedArray()) { _, i ->
                         if (i == 0) { val (t, c) = Topics.surprise(); then(t, c) } else { val c = cats[i - 1]; then(Topics.pick(c), c) }
                     }.show()
@@ -202,7 +208,25 @@ class MainActivity : BaseActivity() {
             c.contentDescription = name
             place(g, c)
         }
+        // OSRS: kit inventory slots, 3 per row on the carved panel (skills-tab look); level = topic's Learning level
+        fun osGrid() = grid(3).apply { setBackgroundResource(R.drawable.os_widget_bg); val p = dp(8); setPadding(p, p, p, p) }
+        fun osSlot(g: android.widget.GridLayout, emoji: String, name: String, level: Int, onClick: () -> Unit, onLong: (() -> Unit)?) {
+            val slot = com.josh.oldschool.OsInventorySlot(context).apply {
+                this.emoji = emoji; label = name; count = level
+                emojiView.textSize = 32f; labelView.maxLines = 2; labelView.textSize = 13f
+                setOnClickListener { onClick() }
+                onLong?.let { l -> setOnLongClickListener { l(); true } }
+            }
+            g.addView(slot, android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, android.widget.GridLayout.FILL),
+                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(2), dp(2), dp(2), dp(2)) })
+        }
         fun builtIns(g: android.widget.GridLayout, small: Boolean) {
+            if (isOsrs()) {
+                Topics.categories.forEach { cat -> osSlot(g, cat.emoji, cat.name, LearnXp.level(context, cat.id), { startTopic(Topics.pick(cat), cat) }, { topicMenu(cat) }) }
+                osSlot(g, "🎲", "Surprise me", 0, { val (t, c) = Topics.surprise(); startTopic(t, c) }, null)
+                osSlot(g, "➕", "Custom topic", 0, { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)) }, null)
+                return
+            }
             Topics.categories.forEach { cat -> tile(g, cat.emoji, cat.name, small, { startTopic(Topics.pick(cat), cat) }, { subtopicSheet(cat) }) }
             tile(g, "🎲", "Surprise me", small, { val (t, c) = Topics.surprise(); startTopic(t, c) })
             tile(g, "➕", "Custom topic", small, { startActivity(Intent(this@MainActivity, NewLessonActivity::class.java)) })
@@ -212,7 +236,11 @@ class MainActivity : BaseActivity() {
             // ---- Your topics: the main section
             topOfHome(this)
             addView(label("Your topics", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
-            val g = grid(2)
+            val g = if (isOsrs()) osGrid() else grid(2)
+            if (isOsrs()) {
+                mine.forEach { s -> val cat = s.asCategory; osSlot(g, s.emoji, s.title, LearnXp.level(context, cat.id), { startTopic(Topics.pick(cat), cat) }, { topicMenu(cat) }) }
+                osSlot(g, "➕", "New topic", 0, { newTopic() }, null)
+            } else
             mine.forEach { s ->
                 val cat = s.asCategory
                 val next = s.subtopics.firstOrNull { st -> Repo.lessons.none { it.topic.equals(st, true) } } ?: s.subtopics.firstOrNull() ?: s.category
@@ -239,12 +267,12 @@ class MainActivity : BaseActivity() {
                 addView(label("New topic", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true).apply { gravity = android.view.Gravity.CENTER; textSize = 17f; setPadding(0, dp(8), 0, 0) })
                 addView(muted("Make your own").apply { gravity = android.view.Gravity.CENTER; textSize = 13f })
             }.apply { strokeWidth = dp(2); strokeColor = attrColor(androidx.appcompat.R.attr.colorPrimary); contentDescription = "+ New topic" }
-            place(g, add)
+            if (!isOsrs()) place(g, add)
             addView(g)
             addView(muted("Tap a topic to start a lesson · press and hold to edit, pick a sub-topic or delete it", top = 4).apply { textSize = 12f })
 
             addView(title("More to explore", top = 20))
-            val more = grid(3); builtIns(more, small = true); addView(more)
+            val more = if (isOsrs()) osGrid() else grid(3); builtIns(more, small = true); addView(more)
         } else {
             addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { importTopics() }) {
                 addView(label("📥 Import your Grok history", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true,
@@ -261,7 +289,7 @@ class MainActivity : BaseActivity() {
             })
             topOfHome(this)
             addView(label("What do you want to learn?", com.google.android.material.R.attr.textAppearanceTitleLarge, top = 16))
-            val g = grid(3); builtIns(g, small = false); addView(g)
+            val g = if (isOsrs()) osGrid() else grid(3); builtIns(g, small = false); addView(g)
             addView(muted("Tap a tile to start a lesson right away · press and hold to choose a sub-topic", top = 4).apply { textSize = 12f })
         }
 
@@ -305,6 +333,24 @@ class MainActivity : BaseActivity() {
         addView(label((Topics.category(l.category)?.emoji ?: "📘") + " " + l.title, bold = true).apply { maxLines = 2 })
         addView(muted("${l.difficulty.label} · ${relTime(l.lastOpened)}").apply { textSize = 12f })
         addView(progressBar(l.progressPercent))
+    }
+
+    /** Long-press on a topic: the kit's "Choose Option" menu in OSRS; the sub-topic sheet otherwise. */
+    fun topicMenu(cat: Topics.Category) {
+        val mine = Topics.suggested(this).firstOrNull { it.asCategory.id == cat.id }
+        val opts = mutableListOf("Learn", "2-minute lesson", "Challenge", "Pick a sub-topic", "Learning path")
+        if (mine?.isCustom == true) opts += listOf("Edit", "Delete") else if (mine != null) opts += "Remove"
+        optionsMenu(cat.name, opts) { i ->
+            when (opts[i]) {
+                "Learn" -> startTopic(Topics.pick(cat), cat)
+                "2-minute lesson" -> startQuick(Topics.pick(cat), cat)
+                "Challenge" -> startChallenge(cat.name, cat)
+                "Pick a sub-topic" -> subtopicSheet(cat, removable = mine?.title)
+                "Learning path" -> createPath(cat.name, defaultDifficulty())
+                "Edit" -> showTopicEditor(mine) { render() }
+                "Delete", "Remove" -> confirmDeleteTopic(mine!!) { render() }
+            }
+        }
     }
 
     private fun subtopicSheet(cat: Topics.Category, removable: String? = null) {
@@ -354,9 +400,8 @@ class MainActivity : BaseActivity() {
         return when { d < 3_600_000 -> "within the hour"; d < 86_400_000 -> "in ${d / 3_600_000} h"; else -> "in ${d / 86_400_000} d" }
     }
 
-    private fun progressBar(pct: Int) = LinearProgressIndicator(this).apply {
-        max = 100; setProgressCompat(pct, false); trackCornerRadius = dp(4)
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+    private fun progressBar(pct: Int) = progressBarView(100).apply { // OSRS: kit HP bar
+        progress = pct; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
     }
 
     private fun lessonCard(l: Lesson) = card(onClick = { startActivity(Intent(this, LessonActivity::class.java).putExtra("id", l.id)) }) {

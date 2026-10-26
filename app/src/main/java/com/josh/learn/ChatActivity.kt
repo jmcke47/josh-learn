@@ -29,13 +29,20 @@ class ChatActivity : BaseActivity() {
         lesson = Repo.lesson(intent.getStringExtra("id")) ?: run { finish(); return }
         list = vbox(12)
         scroll = ScrollView(this).apply { addView(list) }
+        if (isOsrs()) { // kit carved chatbox around the conversation
+            scroll.setBackgroundResource(R.drawable.os_chatbox_carved)
+            list.setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
         val chips = LinearLayout(this).apply { setPadding(dp(12), 0, dp(12), 0) }
         listOf("Explain simpler" to "Explain this lesson more simply, like I'm new to it. Use an everyday analogy.",
             "Go deeper" to "Go deeper: explain the underlying mechanisms, nuances and common misconceptions.",
             "Give an example" to "Give me a fresh, concrete real-world example of the main idea.",
             "Quiz me" to "Ask me one challenging question about this lesson. Wait for my answer before revealing it.",
             "Summarise" to "Summarise the lesson in 5 bullet points.").forEach { (t, prompt) ->
-            chips.addView(Chip(this).apply { text = t; setOnClickListener { ask(prompt) } }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+            if (isOsrs()) chips.addView(TextView(this, null, 0, R.style.Widget_OldSchool_ChatTab).apply { // kit chat tabs
+                text = t; setPadding(dp(12), 0, dp(12), 0); com.josh.oldschool.Os.shadow(this); setOnClickListener { ask(prompt) } },
+                LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(2) })
+            else chips.addView(Chip(this).apply { text = t; setOnClickListener { ask(prompt) } }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
         }
         val (til, et) = input("Ask a follow-up question", multiLine = true)
         input = et; et.maxLines = 4
@@ -55,7 +62,8 @@ class ChatActivity : BaseActivity() {
         }
         screen("Tutor: ${lesson.title}", scroll, bottom = bottom)
         if (lesson.chat.isEmpty()) list.addView(muted("Ask anything about \"${lesson.title}\". Use the quick buttons to get a simpler or deeper explanation." +
-            if (providers.active == Provider.LOCAL) "\n\nYou're using the Offline AI: answers are shorter and can be wrong." else ""))
+            if (providers.active == Provider.LOCAL) "\n\nYou're using the Offline AI: answers are shorter and can be wrong." else "").apply {
+            if (isOsrs()) { setTextColor(getColor(R.color.os_ink_brown)); setShadowLayer(0f, 0f, 0f, 0) } })
         lesson.chat.forEach { bubble(it.role, it.content) }
         scrollDown()
         intent.getStringExtra(EXTRA_DRAFT)?.let { et.setText(it); et.setSelection(it.length); et.requestFocus() }
@@ -74,6 +82,19 @@ class ChatActivity : BaseActivity() {
     private fun bubble(role: String, text: String): TextView {
         val mine = role == "user"
         val tv = label(format(text)).apply { setTextIsSelectable(true) }
+        if (isOsrs()) { // chatbox line: coloured speaker name, then the message (classic public-chat colours, no shadow on parchment)
+            tv.setTextColor(getColor(if (mine) R.color.os_chat_blue else R.color.os_ink)); tv.setShadowLayer(0f, 0f, 0f, 0)
+            tv.typeface = com.josh.oldschool.Os.font(this)
+            val row = vbox {
+                setBackgroundResource(R.drawable.os_chat_row); setPadding(dp(8), dp(4), dp(8), dp(6))
+                addView(label(if (mine) "You:" else "Tutor:", bold = true).apply {
+                    setTextColor(getColor(if (mine) R.color.os_ink else R.color.os_chat_red)); setShadowLayer(0f, 0f, 0f, 0)
+                    typeface = com.josh.oldschool.Os.font(this@ChatActivity, true) })
+                addView(tv)
+            }
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            return tv
+        }
         val card = MaterialCardView(this).apply {
             radius = dp(18).toFloat(); cardElevation = 0f
             setCardBackgroundColor(attrColor(if (mine) com.google.android.material.R.attr.colorPrimaryContainer else com.google.android.material.R.attr.colorSurfaceContainerHigh))

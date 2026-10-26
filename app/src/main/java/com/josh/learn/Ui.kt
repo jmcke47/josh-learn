@@ -56,6 +56,7 @@ fun Context.label(text: CharSequence, style: Int = com.google.android.material.R
     setTextIsSelectable(false)
 }
 fun Context.title(text: CharSequence, top: Int = 16) = label(text, com.google.android.material.R.attr.textAppearanceTitleMedium, color = attrColor(androidx.appcompat.R.attr.colorPrimary), top = top)
+    .apply { if (isOsrs()) setTextAppearance(R.style.TextAppearance_OldSchool_Header) } // kit header: bold yellow, 1px black shadow
 fun Context.muted(text: CharSequence, top: Int = 0) = label(text, com.google.android.material.R.attr.textAppearanceBodyMedium, color = attrColor(com.google.android.material.R.attr.colorOnSurfaceVariant), top = top)
 
 fun Context.button(text: String, style: Int = 0, onClick: (View) -> Unit) =
@@ -70,7 +71,11 @@ fun Context.card(top: Int = 10, onClick: ((View) -> Unit)? = null, block: Linear
     strokeWidth = dp(1); strokeColor = attrColor(com.google.android.material.R.attr.colorOutlineVariant)
     setCardBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurfaceContainerLow))
     onClick?.let { setOnClickListener(it) }
-    addView(vbox(16, block))
+    val inner = vbox(16, block)
+    if (isOsrs()) { // kit stone panel (bevelled, square)
+        radius = 0f; strokeWidth = 0; setCardBackgroundColor(0); inner.setBackgroundResource(R.drawable.os_panel)
+    }
+    addView(inner)
 }
 
 fun Context.input(hint: String, multiLine: Boolean = false, password: Boolean = false, value: String = ""): Pair<TextInputLayout, TextInputEditText> {
@@ -143,7 +148,7 @@ open class BaseActivity : AppCompatActivity() {
     fun importTopicsFrom(uri: Uri) {
         var cancelled = false
         val tv = muted("Opening the file…").apply { setPadding(0, dp(12), 0, 0) }
-        val dlg = MaterialAlertDialogBuilder(this).setTitle("Import my topics")
+        val dlg = appDialog(this).setTitle("Import my topics")
             .setView(vbox(24) { addView(com.google.android.material.progressindicator.LinearProgressIndicator(context).apply { isIndeterminate = true }); addView(tv)
                 addView(muted("Everything is analysed on this phone. Nothing is uploaded, and the chats themselves aren't kept.", top = 8).apply { textSize = 12f }) })
             .setCancelable(false).setNegativeButton(android.R.string.cancel) { _, _ -> cancelled = true }.show()
@@ -179,7 +184,7 @@ open class BaseActivity : AppCompatActivity() {
         }
     }
 
-    private fun importError(msg: String?) = MaterialAlertDialogBuilder(this).setTitle("Couldn't import topics")
+    private fun importError(msg: String?) = appDialog(this).setTitle("Couldn't import topics")
         .setMessage(msg ?: "That file isn't a Grok export or a topics list.").setPositiveButton(android.R.string.ok, null).show()
 
     var lastTopicPreview: AlertDialog? = null
@@ -187,7 +192,7 @@ open class BaseActivity : AppCompatActivity() {
     /** Preview of topics found in a Grok export; untick any, then save (only topic names/sub-topics are stored). */
     fun showTopicPreview(r: GrokImport.Result) {
         if (r.topics.isEmpty()) {
-            lastTopicPreview = MaterialAlertDialogBuilder(this).setTitle("No topics found")
+            lastTopicPreview = appDialog(this).setTitle("No topics found")
                 .setMessage("Read ${r.chats} chats but couldn't find clear topics. Is this a Grok data export?").setPositiveButton(android.R.string.ok, null).show()
             return
         }
@@ -202,7 +207,7 @@ open class BaseActivity : AppCompatActivity() {
                 ". Untick anything you don't want. Only these topic names are saved, privately on this phone."))
             boxes.forEach { addView(it) }
         }
-        lastTopicPreview = MaterialAlertDialogBuilder(this).setTitle("Found ${r.topics.size} topics")
+        lastTopicPreview = appDialog(this).setTitle("Found ${r.topics.size} topics")
             .setView(ScrollView(this).apply { addView(body) })
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton("Save") { _, _ ->
@@ -220,6 +225,7 @@ open class BaseActivity : AppCompatActivity() {
         setTheme(Display.themeRes(this))
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (isOsrs()) window.setBackgroundDrawableResource(R.drawable.os_stone_bg)
         providers = ProviderStore(this)
         AiClient.userAgent = "JoshLearn/${BuildConfig.VERSION_NAME} (Android ${Build.VERSION.RELEASE})"
     }
@@ -229,7 +235,7 @@ open class BaseActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         toolbar = MaterialToolbar(this).apply {
             this.title = title
-            setBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurface))
+            if (!isOsrs()) setBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurface)) // OSRS: the kit toolbar (wood + rivets)
             if (back) { setNavigationIcon(R.drawable.ic_arrow_back); setNavigationOnClickListener { finish() } }
         }
         root.addView(toolbar, -1, -2)
@@ -243,8 +249,9 @@ open class BaseActivity : AppCompatActivity() {
             toolbar.updatePadding(top = b.top)
             insets
         }
-        root.setBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurface))
+        if (isOsrs()) root.setBackgroundResource(R.drawable.os_stone_bg) else root.setBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurface))
         setContentView(root)
+        if (isOsrs()) com.josh.oldschool.Os.applyScreenFrame(root) // carved riveted frame that follows the system-bar insets
     }
 
     // -------------------------------------------------------------- provider switcher
@@ -278,17 +285,17 @@ open class BaseActivity : AppCompatActivity() {
             }
             "${p.label}  ·  $state"
         }.toTypedArray()
-        MaterialAlertDialogBuilder(this)
+        appDialog(this)
             .setTitle("AI provider")
             .setSingleChoiceItems(labels, all.indexOf(providers.active)) { d, i ->
                 val p = all[i]
                 d.dismiss()
                 if (p == Provider.LOCAL && !LocalModels.supported(this)) {
-                    MaterialAlertDialogBuilder(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
+                    appDialog(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
                         .setPositiveButton(android.R.string.ok, null).show()
                 } else if (p == Provider.LOCAL && !providers.isReady(p)) { providers.active = p; onProviderChanged(); OfflineSetup.show(this) }
                 else if (!providers.isReady(p)) {
-                    MaterialAlertDialogBuilder(this).setTitle("${p.label} isn't set up")
+                    appDialog(this).setTitle("${p.label} isn't set up")
                         .setMessage("Add an API key for ${p.label} in Settings first.")
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }.show()
@@ -307,7 +314,7 @@ open class BaseActivity : AppCompatActivity() {
         if (p == Provider.LOCAL && !LocalModels.supported(this)) {
             val other = providers.ready().firstOrNull { it != Provider.LOCAL }
             if (other != null) { toast("Offline AI can't run here; using ${other.short}"); providers.active = other; onProviderChanged(); return providers.config(other) }
-            MaterialAlertDialogBuilder(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
+            appDialog(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }.show()
             return null
@@ -329,7 +336,7 @@ open class BaseActivity : AppCompatActivity() {
 
     /** "Add your <provider> key": Get-a-key link + Settings (+ Use Offline when possible). Shown instead of ever calling without a key. */
     fun showAddKeyPrompt(p: Provider) {
-        val b = MaterialAlertDialogBuilder(this).setTitle("Add your ${p.short} key")
+        val b = appDialog(this).setTitle("Add your ${p.short} key")
             .setMessage((if (p == Provider.GEMINI) "Gemini needs a free API key from Google AI Studio. Create one, then paste it in Settings → Google Gemini."
                 else "${p.label} needs an API key. Add it in Settings.") +
                 (if (Features.OFFLINE_AI && LocalModels.supported(this)) "\n\nOr use the Offline AI: no key needed." else ""))
@@ -361,7 +368,7 @@ open class BaseActivity : AppCompatActivity() {
             view.addView(preview)
             view.addView(muted("Offline answers are simpler and can be wrong. Double-check important facts.", top = 12).apply { gravity = Gravity.CENTER; textSize = 12f })
         }
-        val dlg = MaterialAlertDialogBuilder(this).setView(view).setCancelable(false)
+        val dlg = appDialog(this).setView(view).setCancelable(false)
             .setNegativeButton(android.R.string.cancel) { _, _ -> cancelled = true }.show()
         var chars = 0; var lastPost = 0L
         val tail = StringBuilder()
@@ -398,7 +405,7 @@ open class BaseActivity : AppCompatActivity() {
         if (ae?.kind == AiException.Kind.CANCELLED) return
         val msg = ae?.message ?: "Something went wrong: ${e.javaClass.simpleName}: ${e.message}"
         val others = providers.ready().filter { it != failed }
-        val b = MaterialAlertDialogBuilder(this)
+        val b = appDialog(this)
             .setTitle(when (ae?.kind) {
                 AiException.Kind.RATE_LIMIT -> "Slow down a moment"
                 AiException.Kind.QUOTA -> "Quota reached"
@@ -422,7 +429,7 @@ open class BaseActivity : AppCompatActivity() {
         // Rate limit with a known wait: count down on the Retry button.
         val wait = ae?.retryAfterSec ?: 0
         if (ae?.kind == AiException.Kind.RATE_LIMIT && wait in 1..120) {
-            val btn = if (alt != null) d.getButton(AlertDialog.BUTTON_NEUTRAL) else d.getButton(AlertDialog.BUTTON_POSITIVE)
+            val btn: android.widget.Button = (if (alt != null) d.getButton(AlertDialog.BUTTON_NEUTRAL) else d.getButton(AlertDialog.BUTTON_POSITIVE)) ?: return // OSRS chat dialogs have no buttons
             val end = System.currentTimeMillis() + wait * 1000L
             val tick = object : Runnable { override fun run() {
                 val left = ((end - System.currentTimeMillis()) / 1000).toInt()
@@ -463,14 +470,14 @@ object OfflineSetup {
             })
             addView(a.muted("Free space: %.1f GB. Models are stored privately in the app and kept across updates.".format(LocalModels.freeBytes(a) / 1e9), top = 4))
         }
-        MaterialAlertDialogBuilder(a).setTitle("Set up Offline AI")
+        appDialog(a).setTitle("Set up Offline AI")
             .setView(ScrollView(a).apply { addView(body) })
             .setNegativeButton("Not now") { _, _ -> LearnApp.prefs(a).edit().putBoolean("offline_declined", true).apply() }
             .setNeutralButton("Use an API key") { _, _ -> a.startActivity(Intent(a, SettingsActivity::class.java)) }
             .setPositiveButton("Download") { _, _ ->
                 LocalModels.select(a, choice)
                 val err = ModelDownloader.start(a, choice)
-                if (err != null) MaterialAlertDialogBuilder(a).setTitle("Can't download yet").setMessage(err).setPositiveButton(android.R.string.ok, null).show()
+                if (err != null) appDialog(a).setTitle("Can't download yet").setMessage(err).setPositiveButton(android.R.string.ok, null).show()
                 else { a.providers.active = Provider.LOCAL; a.onProviderChanged(); a.toast("Downloading ${choice.short} (${choice.sizeText}). You can keep using the app."); onStarted() }
             }.show()
     }
@@ -482,7 +489,7 @@ object KeyTester {
         a.runAi("Testing ${p.short} key…", p, { cfg, _, _ ->
             AiClient.complete(cfg, listOf(Msg("user", "Reply with just the word OK.")))
         }) { reply ->
-            MaterialAlertDialogBuilder(a).setIcon(R.drawable.ic_check_circle).setTitle("${p.short} key works")
+            appDialog(a).setIcon(R.drawable.ic_check_circle).setTitle("${p.short} key works")
                 .setMessage("Model ${a.providers.model(p)} replied: \"${reply.trim().take(60)}\"")
                 .setPositiveButton(android.R.string.ok, null).show()
             after()
@@ -507,6 +514,18 @@ fun Context.depthSlider(current: Depth, compact: Boolean = false, onChange: (Dep
     fun show(d: Depth) { name.text = "Depth: ${d.label}" }
     show(current)
     if (!compact) addView(name)
+    if (isOsrs()) { // kit stepped stone seekbar with a gold knob
+        val sb = android.widget.SeekBar(context, null, 0, R.style.Widget_OldSchool_SeekBar_Discrete).apply {
+            max = Depth.entries.size - 1; progress = current.ordinal; contentDescription = "Lesson depth"
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, fromUser: Boolean) { val d = Depth.entries[p]; show(d); if (fromUser) onChange(d) }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+            })
+        }
+        addView(sb, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(4) })
+        tag = sb
+    } else {
     val slider = com.google.android.material.slider.Slider(context).apply {
         valueFrom = 0f; valueTo = (Depth.entries.size - 1).toFloat(); stepSize = 1f; value = current.ordinal.toFloat()
         setLabelFormatter { Depth.entries[it.toInt()].label }
@@ -514,6 +533,8 @@ fun Context.depthSlider(current: Depth, compact: Boolean = false, onChange: (Dep
         addOnChangeListener { _, v, fromUser -> val d = Depth.entries[v.toInt()]; show(d); if (fromUser) onChange(d) }
     }
     addView(slider, LinearLayout.LayoutParams(-1, -2))
+    tag = slider
+    }
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         listOf("Like I'm 5" to Gravity.START, "Normal" to Gravity.CENTER_HORIZONTAL, "Expert" to Gravity.END).forEach { (t, g) ->
@@ -521,5 +542,4 @@ fun Context.depthSlider(current: Depth, compact: Boolean = false, onChange: (Dep
         }
         setPadding(dp(12), 0, dp(12), 0)
     })
-    tag = slider
 }

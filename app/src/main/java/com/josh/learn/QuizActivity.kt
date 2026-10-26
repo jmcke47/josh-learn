@@ -2,6 +2,7 @@ package com.josh.learn
 
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.view.View
 import android.view.Menu
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -58,7 +59,8 @@ class QuizActivity : BaseActivity() {
         fun reveal(ok: Boolean, extra: String = "") {
             if (ok) correct++ else missed += q
             after.addView(label(if (ok) "✓ Correct" else "✗ Not quite", bold = true,
-                color = ContextCompat.getColor(this, if (ok) R.color.good else R.color.bad), top = 12))
+                color = resultColor(ok), top = 12))
+            if (ok) xpDrop()
             if (extra.isNotBlank()) after.addView(label(extra, top = 4))
             if (q.explanation.isNotBlank()) after.addView(muted(q.explanation, top = 6))
             after.addView(button(if (index + 1 < questions.size) "Next" else "See results") { index++; show() }
@@ -67,13 +69,10 @@ class QuizActivity : BaseActivity() {
         }
         when (q) {
             is Prompts.Question.Mcq -> {
-                val buttons = mutableListOf<MaterialButton>()
+                val buttons = mutableListOf<android.widget.Button>()
                 q.options.forEachIndexed { i, opt ->
-                    val b = outlined("${"ABCDEFGH"[i]}.  $opt") {
-                        buttons.forEach { it.isEnabled = false }
-                        buttons[q.answer].strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.good))
-                        buttons[q.answer].strokeWidth = dp(3)
-                        if (i != q.answer) { buttons[i].strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.bad)); buttons[i].strokeWidth = dp(3) }
+                    val b = answerButton("${"ABCDEFGH"[i]}.  $opt") {
+                        markAnswers(buttons, q.answer, i)
                         reveal(i == q.answer, if (i == q.answer) "" else "Answer: ${q.options[q.answer]}")
                     }.apply {
                         isAllCaps = false; textAlignment = android.view.View.TEXT_ALIGNMENT_VIEW_START
@@ -104,8 +103,17 @@ class QuizActivity : BaseActivity() {
         scroll.addView(col)
     }
 
+    /** Test hook: start the quiz with ready-made questions. */
+    fun start(qs: List<Prompts.Question>) { questions = qs; index = 0; correct = 0; missed.clear(); show() }
+    /** Test hook: tap option i of the current multiple-choice question. */
+    fun answer(i: Int) {
+        fun all(v: View): List<View> = if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { all(v.getChildAt(it)) } else listOf(v)
+        all(scroll).filter { it.tag == "answer" }[i].performClick()
+    }
+
     private fun finishQuiz() {
         lesson.quizScores += QuizScore(correct, questions.size, System.currentTimeMillis())
+        skillFor(lesson.category, lesson.topic.ifBlank { lesson.title }).let { (key, name) -> finishXp(key, name, correct) }
         Repo.save()
         scroll.removeAllViews()
         val pct = if (questions.isEmpty()) 0 else correct * 100 / questions.size

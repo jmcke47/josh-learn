@@ -6,9 +6,16 @@
         android:gravity="center_vertical" android:paddingStart="6dp" android:paddingEnd="2dp" android:paddingBottom="4dp">
         <TextView android:id="@+id/widget_header" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
             android:text="📚 Josh Learn" android:textColor="@color/widget_text" android:textSize="15sp" android:textStyle="bold" android:maxLines="1" />
+        <!-- OSRS (single frame, restyled in place): pixel-font bitmaps from the Old School kit replace the TextViews -->
+        <ImageView android:id="@+id/widget_header_img" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:importantForAccessibility="no" android:visibility="gone" />
+        <FrameLayout android:id="@+id/widget_header_space" android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:visibility="gone" />
         <TextView android:id="@+id/widget_due" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:background="@drawable/widget_chip_bg" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="3dp" android:paddingBottom="3dp"
             android:text="🃏 0 due" android:textColor="@color/widget_on_chip" android:textSize="13sp" android:maxLines="1" />
+        <ImageView android:id="@+id/widget_due_img" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="6dp" android:paddingBottom="6dp"
+            android:importantForAccessibility="no" android:visibility="gone" />
     </LinearLayout>
     <LinearLayout android:id="@+id/widget_tod" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:layout_margin="4dp" android:background="@drawable/widget_tod_bg"
@@ -16,9 +23,13 @@
         <TextView android:id="@+id/tod_title" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="⭐ Topic of the day · 🔬 Science" android:textColor="@color/widget_on_tile" android:textSize="14sp" android:textStyle="bold"
             android:maxLines="1" android:ellipsize="end" />
+        <ImageView android:id="@+id/tod_title_img" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:importantForAccessibility="no" android:visibility="gone" />
         <TextView android:id="@+id/tod_fact" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
             android:text="Tap for today's lesson." android:textColor="@color/widget_on_tile" android:textSize="13sp"
             android:maxLines="3" android:ellipsize="end" android:hyphenationFrequency="none" />
+        <ImageView android:id="@+id/tod_fact_img" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp"
+            android:importantForAccessibility="no" android:visibility="gone" />
     </LinearLayout>
     <GridView android:id="@+id/widget_grid" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:numColumns="2" android:stretchMode="columnWidth" android:horizontalSpacing="0dp" android:verticalSpacing="0dp"

@@ -22,7 +22,7 @@ class PathActivity : BaseActivity() {
     override fun buildMenu(menu: Menu) {
         addProviderSwitcher(menu)
         menu.add("Delete path").setOnMenuItemClickListener {
-            MaterialAlertDialogBuilder(this).setTitle("Delete this learning path?").setMessage("Lessons already created stay in your library.")
+            appDialog(this).setTitle("Delete this learning path?").setMessage("Lessons already created stay in your library.")
                 .setNegativeButton(android.R.string.cancel, null).setPositiveButton("Delete") { _, _ -> Repo.deletePath(path); finish() }.show(); true
         }
     }

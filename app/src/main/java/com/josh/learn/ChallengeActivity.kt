@@ -34,14 +34,17 @@ class ChallengeActivity : BaseActivity() {
     var answered = 0
     private var endAt = 0L
     var running = false
-    private lateinit var timer: LinearProgressIndicator
+    private var timer: LinearProgressIndicator? = null
+    /** OSRS: the kit's segmented timer orb replaces the bar. */
+    var orb: com.josh.oldschool.OsTimerOrb? = null
     private lateinit var timeText: android.widget.TextView
     private val tick = object : Runnable {
         override fun run() {
             if (!running) return
             val left = endAt - SystemClock.uptimeMillis()
             if (left <= 0) { finishChallenge(false); return }
-            timer.setProgressCompat((left / 100).toInt(), false)
+            timer?.setProgressCompat((left / 100).toInt(), false)
+            orb?.setRemaining(left / (Challenge.SECONDS * 1000f), Challenge.SECONDS * 1000L)
             timeText.text = "⏱️ ${(left + 999) / 1000}s"
             main.postDelayed(this, 100)
         }
@@ -94,7 +97,20 @@ class ChallengeActivity : BaseActivity() {
         val m = questions[index]
         scroll.removeAllViews()
         val col = vbox(16)
+        val osrs = isOsrs()
         timeText = label("⏱️ ${((endAt - SystemClock.uptimeMillis()).coerceAtLeast(0) + 999) / 1000}s", com.google.android.material.R.attr.textAppearanceTitleLarge, bold = true)
+        if (osrs) {
+            // Kit timer orb (counts down from 60, colour shifts green → yellow → red); one orb per run, re-parented per question.
+            // Driven by the challenge clock (setRemaining on every tick) so orb, score and time-up always agree.
+            val o = orb ?: com.josh.oldschool.OsTimerOrb(this).also { orb = it }
+            o.setRemaining((endAt - SystemClock.uptimeMillis()).coerceAtLeast(0) / (Challenge.SECONDS * 1000f), Challenge.SECONDS * 1000L)
+            (o.parent as? android.view.ViewGroup)?.removeView(o)
+            col.addView(hbox {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(o, LinearLayout.LayoutParams(dp(64), dp(64)))
+                addView(label("Score $score", com.google.android.material.R.attr.textAppearanceTitleLarge, bold = true).apply { setPadding(dp(16), 0, 0, 0) })
+            })
+        } else {
         col.addView(hbox {
             addView(timeText, LinearLayout.LayoutParams(0, -2, 1f))
             addView(label("Score $score", com.google.android.material.R.attr.textAppearanceTitleLarge, bold = true))
@@ -102,38 +118,36 @@ class ChallengeActivity : BaseActivity() {
         timer = LinearProgressIndicator(this).apply { max = Challenge.SECONDS * 10; trackCornerRadius = dp(4)
             setProgressCompat(((endAt - SystemClock.uptimeMillis()) / 100).toInt().coerceAtLeast(0), false) }
         col.addView(timer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        }
         col.addView(muted("Question ${index + 1} of ${questions.size}", top = 12))
         col.addView(label(m.question, com.google.android.material.R.attr.textAppearanceTitleLarge, top = 4))
-        val buttons = mutableListOf<MaterialButton>()
+        val buttons = mutableListOf<android.widget.Button>()
         m.options.forEachIndexed { i, opt ->
-            val b = outlined("${"ABCDEFGH"[i]}.  $opt") { pick(i, buttons) }.apply {
-                isAllCaps = false; textAlignment = View.TEXT_ALIGNMENT_VIEW_START
-                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
-            }
+            val b = answerButton("${"ABCDEFGH"[i]}.  $opt") { pick(i, buttons) }
             buttons += b; col.addView(b)
         }
         scroll.addView(col)
     }
 
-    private fun pick(i: Int, buttons: List<MaterialButton>) {
+    private fun pick(i: Int, buttons: List<android.widget.Button>) {
         if (!running) return
         val m = questions[index]; answered++
         val ok = i == m.answer
-        if (ok) score++
-        buttons.forEach { it.isEnabled = false }
-        buttons[m.answer].strokeColor = android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, R.color.good)); buttons[m.answer].strokeWidth = dp(3)
-        if (!ok) { buttons[i].strokeColor = android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, R.color.bad)); buttons[i].strokeWidth = dp(3) }
+        if (ok) { score++; xpDrop() }
+        markAnswers(buttons, m.answer, i)
         main.postDelayed({ if (running) { index++; show() } }, if (ok) 350 else 900)
     }
 
     fun answer(i: Int) { // test hook
         val col = scroll.getChildAt(0) as LinearLayout
-        (0 until col.childCount).map { col.getChildAt(it) }.filterIsInstance<MaterialButton>()[i].performClick()
+        (0 until col.childCount).map { col.getChildAt(it) }.filter { it.tag == "answer" }[i].performClick()
     }
 
     private fun finishChallenge(clearedAll: Boolean) {
         if (!running) return
         running = false; main.removeCallbacks(tick)
+        orb?.stop(); orb = null
+        skillFor(category, topic).let { (key, name) -> finishXp(key, name, score) }
         val newBest = Challenge.record(this, pbKey(), score)
         val best = Challenge.best(this, pbKey())
         scroll.removeAllViews()

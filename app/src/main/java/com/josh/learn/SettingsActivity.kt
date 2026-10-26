@@ -67,7 +67,7 @@ class SettingsActivity : BaseActivity() {
                         addView(hbox {
                             if (m != selected) addView(button("Use this model") { LocalModels.select(context, m); LocalLlm.release(); providers.active = Provider.LOCAL; onProviderChanged() })
                             addView(textBtn("Delete (${m.sizeText})") {
-                                MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Delete ${m.short}?")
+                                appDialog(this@SettingsActivity).setTitle("Delete ${m.short}?")
                                     .setMessage("Frees ${m.sizeText}. You can download it again later.")
                                     .setNegativeButton(android.R.string.cancel, null)
                                     .setPositiveButton("Delete") { _, _ -> LocalModels.delete(context, m); onProviderChanged() }.show()
@@ -84,7 +84,7 @@ class SettingsActivity : BaseActivity() {
                             addView(button(if (partial > 0) "Resume (%.0f%% done)".format(partial * 100.0 / m.sizeBytes) else "Download") {
                                 LocalModels.select(context, m)
                                 val err = ModelDownloader.start(this@SettingsActivity, m)
-                                if (err != null) MaterialAlertDialogBuilder(this@SettingsActivity).setMessage(err).setPositiveButton(android.R.string.ok, null).show()
+                                if (err != null) appDialog(this@SettingsActivity).setMessage(err).setPositiveButton(android.R.string.ok, null).show()
                                 else { providers.active = Provider.LOCAL; onProviderChanged() }
                             }.apply { isEnabled = !st.active })
                             if (partial > 0) addView(textBtn("Discard partial") { LocalModels.delete(context, m); render() })
@@ -146,7 +146,7 @@ class SettingsActivity : BaseActivity() {
             addView(hbox {
                 addView(outlined(if (nImported > 0) "Re-import" else "Import my topics") { importTopics() })
                 if (nImported > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Remove imported") {
-                    MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Remove all imported topics?")
+                    appDialog(this@SettingsActivity).setTitle("Remove all imported topics?")
                         .setMessage("Removes the topics imported from your Grok export. Topics you made yourself and lessons you made stay.")
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton("Remove imported") { _, _ -> Topics.clearImported(context); render() }.show()
@@ -167,9 +167,13 @@ class SettingsActivity : BaseActivity() {
             addView(choiceChips(Display.themes, Display.theme(context), { Display.themeLabel(it) }) {
                 prefs.edit { putString("theme", it) }; LearnApp.applyTheme(this@SettingsActivity); TopicsWidget.refresh(this@SettingsActivity); recreate()
             })
-            if (Display.theme(context) == "osrs") addView(textBtn("OSRS font: Pixelify Sans (SIL Open Font License)") {
-                val text = runCatching { assets.open("licenses/PixelifySans-OFL.txt").bufferedReader().readText() }.getOrDefault("")
-                MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Pixelify Sans — SIL OFL 1.1").setMessage(text).setPositiveButton(android.R.string.ok, null).show()
+            if (Display.theme(context) == "osrs") addView(textBtn("OSRS fonts: OS Small + Pixelify Sans (SIL Open Font License)") {
+                // Both licence files ship with the shared Old School kit (oldschool-theme/src/main/assets/licenses).
+                val text = listOf("licenses/os_font-OFL.txt", "licenses/os_PixelifySans-OFL.txt").joinToString("\n\n────────\n\n") { f ->
+                    runCatching { assets.open(f).bufferedReader().readText() }.getOrDefault("") }
+                val body = android.widget.ScrollView(this@SettingsActivity).apply {
+                    addView(label(text).apply { textSize = 13f; setPadding(dp(20), dp(8), dp(20), dp(8)); setTextIsSelectable(true) }) }
+                appDialog(this@SettingsActivity).setTitle("Font licences — SIL OFL 1.1").setView(body).setPositiveButton(android.R.string.ok, null).show()
             })
             addView(muted("Text size", top = 8))
             addView(choiceChips(Display.fontSizes.map { it.first }, Display.fontSize(context), { Display.fontLabel(it) }) {
@@ -265,7 +269,7 @@ class SettingsActivity : BaseActivity() {
             })
         })
         if (providers.hasKey(p)) addView(textBtn("Remove key") {
-            MaterialAlertDialogBuilder(this@SettingsActivity).setTitle("Remove ${p.short} key?")
+            appDialog(this@SettingsActivity).setTitle("Remove ${p.short} key?")
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Remove") { _, _ ->
                     providers.setKey(p, null)

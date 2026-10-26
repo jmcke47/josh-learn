@@ -32,7 +32,7 @@ class ReviewActivity : BaseActivity() {
     override fun buildMenu(menu: Menu) {
         menu.add("Delete this card").setOnMenuItemClickListener {
             val c = current ?: return@setOnMenuItemClickListener true
-            MaterialAlertDialogBuilder(this).setTitle("Delete this card?").setNegativeButton(android.R.string.cancel, null)
+            appDialog(this).setTitle("Delete this card?").setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Delete") { _, _ -> Repo.cards.remove(c); queue.remove(c); Repo.save(); next() }.show(); true
         }
     }

@@ -59,7 +59,7 @@ fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (T
         addView(muted("Starting depth (optional)", top = 12))
         addView(depthSlider(depth) { depth = it })
     }
-    val b = MaterialAlertDialogBuilder(this).setTitle(if (existing == null) "New topic" else "Edit topic")
+    val b = appDialog(this).setTitle(if (existing == null) "New topic" else "Edit topic")
         .setView(android.widget.ScrollView(this).apply { addView(body) })
         .setNegativeButton(android.R.string.cancel, null)
         .setPositiveButton(if (existing == null) "Create topic" else "Save", null)
@@ -80,7 +80,7 @@ fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (T
 }
 
 fun BaseActivity.confirmDeleteTopic(s: Topics.Suggested, onDone: () -> Unit) {
-    MaterialAlertDialogBuilder(this).setTitle("Delete ${s.emoji} ${s.title}?")
+    appDialog(this).setTitle("Delete ${s.emoji} ${s.title}?")
         .setMessage(if (s.isCustom) "Removes this topic from Your topics and the widget. Lessons and flashcards you already made stay in your Library."
             else "Hides this imported topic from Your topics and the widget. Lessons you made stay. Re-importing your Grok export brings it back.")
         .setNegativeButton(android.R.string.cancel, null)

@@ -72,19 +72,18 @@ class QuickActivity : BaseActivity() {
         col.addView(muted("Question ${index + 1} of ${q.questions.size}"))
         col.addView(label(m.question, com.google.android.material.R.attr.textAppearanceTitleLarge, top = 8))
         val after = vbox()
-        val buttons = mutableListOf<MaterialButton>()
+        val buttons = mutableListOf<android.widget.Button>()
         m.options.forEachIndexed { i, opt ->
-            val b = outlined("${"ABCDEFGH"[i]}.  $opt") {
-                buttons.forEach { it.isEnabled = false }
-                buttons[m.answer].strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.good)); buttons[m.answer].strokeWidth = dp(3)
+            val b = answerButton("${"ABCDEFGH"[i]}.  $opt") {
+                markAnswers(buttons, m.answer, i)
                 val ok = i == m.answer
-                if (ok) correct++ else { buttons[i].strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.bad)); buttons[i].strokeWidth = dp(3) }
+                if (ok) { correct++; xpDrop() }
                 after.addView(label(if (ok) "✓ Correct" else "✗ Answer: ${m.options[m.answer]}", bold = true,
-                    color = ContextCompat.getColor(this, if (ok) R.color.good else R.color.bad), top = 12))
+                    color = resultColor(ok), top = 12))
                 if (m.explanation.isNotBlank()) after.addView(muted(m.explanation, top = 4))
                 after.addView(button(if (index + 1 < q.questions.size) "Next" else "Finish") { index++; question() }
                     .apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) } })
-            }.apply { isAllCaps = false; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } }
+            }
             buttons += b; col.addView(b)
         }
         col.addView(after)
@@ -93,13 +92,14 @@ class QuickActivity : BaseActivity() {
 
     fun answer(i: Int) { // test hook: tap option i of the current question
         val col = scroll.getChildAt(0) as LinearLayout
-        (0 until col.childCount).map { col.getChildAt(it) }.filterIsInstance<MaterialButton>()[i].performClick()
+        (0 until col.childCount).map { col.getChildAt(it) }.filter { it.tag == "answer" }.ifEmpty { (0 until col.childCount).map { col.getChildAt(it) }.filterIsInstance<MaterialButton>() }[i].performClick()
     }
     fun next() { index++; question() }
 
     private fun done() {
         val q = quick ?: return
         Repo.lesson(lessonId)?.let { it.quizScores += QuizScore(correct, q.questions.size, System.currentTimeMillis()); Repo.save() }
+        skillFor(category, topic).let { (key, name) -> finishXp(key, name, correct) }
         scroll.removeAllViews()
         scroll.addView(vbox(16) {
             gravity = android.view.Gravity.CENTER_HORIZONTAL

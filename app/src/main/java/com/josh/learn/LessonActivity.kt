@@ -11,14 +11,14 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 
 class LessonActivity : BaseActivity() {
     private lateinit var lesson: Lesson
-    private lateinit var progress: LinearProgressIndicator
+    private lateinit var progress: android.widget.ProgressBar
     private lateinit var progressText: android.widget.TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lesson = Repo.lesson(intent.getStringExtra("id")) ?: run { finish(); return }
         lesson.lastOpened = System.currentTimeMillis(); Repo.save()
-        progress = LinearProgressIndicator(this).apply { max = 100; trackCornerRadius = dp(4) }
+        progress = progressBarView(100) // OSRS: kit HP bar
         progressText = muted("")
         screen(lesson.title, build(), scroll = true)
     }
@@ -26,7 +26,7 @@ class LessonActivity : BaseActivity() {
     override fun onResume() { super.onResume(); if (::lesson.isInitialized) refreshProgress() }
 
     private fun refreshProgress() {
-        progress.setProgressCompat(lesson.progressPercent, true)
+        progress.setProgress(lesson.progressPercent, true)
         val quiz = if (lesson.quizScores.isEmpty()) "no quiz yet" else "best quiz ${(lesson.bestQuiz * 100).toInt()}%"
         progressText.text = "${lesson.progressPercent}% learned · ${lesson.understood.count { it < lesson.concepts.size }}/${lesson.concepts.size} concepts · $quiz"
     }
@@ -41,7 +41,7 @@ class LessonActivity : BaseActivity() {
         if (lesson.difficulty != Difficulty.EXPERT) item("Make a deeper version") { regenerate(Difficulty.entries[lesson.difficulty.ordinal + 1]) }
         item("Share lesson as text") { share() }
         item("Delete lesson") {
-            MaterialAlertDialogBuilder(this).setTitle("Delete this lesson?").setMessage("Its flashcards and chat are deleted too.")
+            appDialog(this).setTitle("Delete this lesson?").setMessage("Its flashcards and chat are deleted too.")
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Delete") { _, _ -> Repo.deleteLesson(lesson); finish() }.show()
         }
@@ -69,18 +69,18 @@ class LessonActivity : BaseActivity() {
         addView(progressText)
         refreshProgress()
 
-        addView(card {
+        addView(paper {
             addView(label("Overview", com.google.android.material.R.attr.textAppearanceTitleMedium))
             addView(label(lesson.overview, top = 6).apply { setTextIsSelectable(true) })
         })
-        if (lesson.takeaways.isNotEmpty()) addView(card {
+        if (lesson.takeaways.isNotEmpty()) addView(paper {
             addView(label("Key takeaways", com.google.android.material.R.attr.textAppearanceTitleMedium))
             lesson.takeaways.forEach { addView(label("•  $it", top = 6)) }
         })
 
         if (lesson.concepts.isNotEmpty()) addView(title("Key concepts", top = 20))
         lesson.concepts.forEachIndexed { i, c ->
-            addView(card {
+            addView(paper {
                 addView(label("${i + 1}. ${c.title}", com.google.android.material.R.attr.textAppearanceTitleMedium))
                 addView(label(c.explanation, top = 6).apply { setTextIsSelectable(true) })
                 if (c.analogy.isNotBlank()) addView(muted("💡 Analogy: ${c.analogy}", top = 8))
@@ -98,7 +98,7 @@ class LessonActivity : BaseActivity() {
             })
         }
 
-        if (lesson.glossary.isNotEmpty()) addView(card(top = 20) {
+        if (lesson.glossary.isNotEmpty()) addView(paper(top = 20) {
             addView(label("Key terms", com.google.android.material.R.attr.textAppearanceTitleMedium))
             lesson.glossary.forEach { t ->
                 addView(label(android.text.SpannableStringBuilder().apply {

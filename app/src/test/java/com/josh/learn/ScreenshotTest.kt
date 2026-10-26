@@ -357,9 +357,123 @@ class ScreenshotTest {
             assertEquals(ctx.resources.getColor(R.color.os_panel, null), a.attrColor(com.google.android.material.R.attr.colorSurface))
             snap(a, "16-osrs-home")
             val s = Robolectric.buildActivity(SettingsActivity::class.java).setup().get(); idle()
-            assertTrue(texts(s.window.decorView).contains("OSRS font: Pixelify Sans (SIL Open Font License)"))
-            assertTrue(ctx.assets.open("licenses/PixelifySans-OFL.txt").bufferedReader().readText().contains("SIL OPEN FONT LICENSE"))
+            assertTrue(texts(s.window.decorView).contains("OSRS fonts: OS Small + Pixelify Sans (SIL Open Font License)"))
+            for (f in listOf("licenses/os_font-OFL.txt", "licenses/os_PixelifySans-OFL.txt")) // shipped by the Old School kit
+                assertTrue(ctx.assets.open(f).bufferedReader().readText().contains("SIL OPEN FONT LICENSE"))
             snapView(widgetView(340, 640), "17-widget-osrs")
+        } finally { LocalModels.abiOverride = true }
+    }
+
+    // ================================================================= v1.4.2: shared Old School kit in OSRS mode
+
+    private fun findAll(v: View, pred: (View) -> Boolean): List<View> =
+        (if (pred(v)) listOf(v) else emptyList()) + ((v as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).flatMap { findAll(g.getChildAt(it), pred) } } ?: emptyList())
+
+    /** Activity screen with a dialog drawn centred on top (dim included), like the phone shows it. */
+    private fun overlayShot(a: Activity, d: android.app.Dialog, name: String) {
+        idle(); if (dir.isEmpty()) return
+        val root = a.window.decorView; val w = root.width.takeIf { it > 0 } ?: 1179; val h = root.height.takeIf { it > 0 } ?: 2556
+        root.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)); root.layout(0, 0, w, h)
+        val dv = d.window!!.decorView
+        dv.measure(View.MeasureSpec.makeMeasureSpec((w * 0.86).toInt(), View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST))
+        dv.layout(0, 0, dv.measuredWidth, dv.measuredHeight)
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); val cv = Canvas(bmp)
+        root.draw(cv); cv.drawColor(0x99000000.toInt())
+        cv.save(); cv.translate((w - dv.measuredWidth) / 2f, (h - dv.measuredHeight) / 2f); dv.draw(cv); cv.restore()
+        File(dir).mkdirs(); File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun osrsKitScreens() {
+        val f = System.getProperty("topics.file").orEmpty()
+        Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+        LearnApp.prefs(ctx).edit().putString("theme", "osrs").commit()
+        org.robolectric.RuntimeEnvironment.setQualifiers("+night")
+        LocalModels.abiOverride = false
+        val lp = shadowOf(Looper.getMainLooper())
+        try {
+            // Home: kit inventory slots, 3 per row, level in the corner; long-press = kit "Choose Option" menu
+            LearnXp.add(ctx, Topics.suggested(ctx).first().asCategory.id, 1200) // a few levels on the first topic
+            val home = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+            val slots = findAll(home.window.decorView) { it is com.josh.oldschool.OsInventorySlot }
+            assertTrue(slots.size >= 3)
+            assertTrue((slots[0] as com.josh.oldschool.OsInventorySlot).count > 1)
+            snap(home, "30-osrs-home")
+            slots[0].performLongClick(); idle()
+            val menu = lastMenu!!; assertTrue(menu.isShowing)
+            val mt = texts(menu.window!!.decorView)
+            assertTrue(mt.contains("Choose Option") && mt.any { it.startsWith("Learn") } && mt.any { it.startsWith("Challenge") })
+            overlayShot(home, menu, "31-osrs-long-press-menu")
+            menu.dismiss()
+
+            // Lesson: parchment OsLessonCards, HP progress bar, stepped stone depth seekbar
+            val l = lessonSample; l.chat += Msg("user", "Why does it only send power to the rear when the front slips?")
+            l.chat += Msg("assistant", "Because the **Haldex coupling** is normally open. When the front wheels spin faster than the rear, a pump builds pressure and clamps the clutch pack, so torque flows rearwards.")
+            Repo.addLesson(l, emptyList())
+            val la = Robolectric.buildActivity(LessonActivity::class.java, android.content.Intent(ctx, LessonActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
+            assertTrue(findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }.size >= 2)
+            assertTrue(findAll(la.window.decorView) { it is android.widget.SeekBar }.isNotEmpty())
+            snap(la, "32-osrs-lesson")
+            val sv = findScroll(la.window.decorView)!!
+            val card = findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }[1]
+            var y = 0; var x: View? = card; while (x != null && x !== sv) { y += x.top; x = x.parent as? View }
+            sv.scrollTo(0, y - la.dp(60)); snap(la, "32b-osrs-lesson-concepts")
+
+            // Tutor: carved chatbox with coloured speaker names and chat tabs
+            val ch = Robolectric.buildActivity(ChatActivity::class.java, android.content.Intent(ctx, ChatActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
+            val ct = texts(ch.window.decorView); assertTrue(ct.contains("You:") && ct.contains("Tutor:") && ct.contains("Explain simpler"))
+            snap(ch, "33-osrs-tutor-chat")
+
+            // Quiz: OsAnswerButtons + XP drop on a correct answer
+            val q = Robolectric.buildActivity(QuizActivity::class.java, android.content.Intent(ctx, QuizActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
+            q.start(listOf(Prompts.Question.Mcq("What engages a Haldex coupling?", listOf("Front wheels slipping faster than the rear", "The handbrake", "A cold engine", "Pressing the clutch"), 0, "A pump builds pressure when front and rear speeds differ."),
+                Prompts.Question.Mcq("Where is the Haldex unit?", listOf("By the rear diff", "In the gearbox", "Behind the dash", "In the boot"), 0, "")))
+            idle()
+            assertTrue(findAll(q.window.decorView) { it is com.josh.oldschool.OsAnswerButton }.size == 4)
+            q.answer(0)
+            assertEquals(com.josh.oldschool.OsAnswerButton.Result.CORRECT, (findAll(q.window.decorView) { it is com.josh.oldschool.OsAnswerButton }[0] as com.josh.oldschool.OsAnswerButton).result)
+            assertEquals("+25", (findAll(q.window.decorView) { it.tag == "os_xp_drop" }.single() as android.widget.TextView).text.toString())
+            // Robolectric finishes the kit's AnimatorSet on its first frame, so pose the drop at a mid-flight frame
+            // (fully visible, ~90 dp up the right edge) for the screenshot; the real animation runs 1.7 s on a phone.
+            val dv = findAll(q.window.decorView) { it.tag == "os_xp_drop" }.single()
+            dv.alpha = 1f; dv.translationY = -q.dp(90).toFloat()
+            snapView(q.window.decorView, "34-osrs-quiz-xp-drop")
+            lp.idleFor(java.time.Duration.ofSeconds(2)); assertTrue(findAll(q.window.decorView) { it.tag == "os_xp_drop" }.isEmpty()) // floats away
+
+            // Challenge: kit timer orb, then the level-up banner when the run levels the topic up
+            val qs = (1..4).map { Prompts.Question.Mcq("Question $it: which part of a 4WD splits torque between axles?", listOf("Transfer case", "Radiator", "Alternator", "Muffler"), 0, "") }
+            val c = Robolectric.buildActivity(ChallengeActivity::class.java, android.content.Intent(ctx, ChallengeActivity::class.java)
+                .putExtra("topic", "4WD & Car Mechanics").putExtra("cat", "4wd")).setup().get(); idle()
+            c.start(qs); idle()
+            c.answer(0); lp.idleFor(java.time.Duration.ofMillis(400))
+            c.answer(0); lp.idleFor(java.time.Duration.ofMillis(400))
+            lp.idleFor(java.time.Duration.ofSeconds(14))
+            val orb = c.orb!!; assertTrue(orb.secondsLeft in 40..50)
+            snapView(c.window.decorView, "35-osrs-challenge-orb")
+            c.answer(0); lp.idleFor(java.time.Duration.ofMillis(400))
+            c.answer(0); lp.idleFor(java.time.Duration.ofMillis(400))
+            val bt = texts(c.window.decorView)
+            assertTrue(bt.any { it.startsWith("Congratulations, you just advanced") }) // 4 × 25 XP: level 1 → 2
+            assertEquals(2, LearnXp.level(ctx, ctx.skillFor("4wd", "4WD & Car Mechanics").first))
+            snapView(c.window.decorView, "36-osrs-challenge-level-up")
+
+            // Settings in OSRS (Display section with both font licences)
+            val s = Robolectric.buildActivity(SettingsActivity::class.java).setup().get(); idle()
+            val ssv = findScroll(s.window.decorView)!!
+            val disp = findAll(ssv) { it is android.widget.TextView && it.text.toString() == "Display" }.first()
+            var yy = 0; var xx: View? = disp; while (xx != null && xx !== ssv) { yy += xx.top; xx = xx.parent as? View }
+            ssv.scrollTo(0, yy - s.dp(8)); snap(s, "37-osrs-settings")
+
+            // Widget at a large size (single frame restyled in place: carved frame, pixel title, inventory-slot tiles)
+            val wv = widgetView(400, 760)
+            assertEquals(View.GONE, wv.findViewById<View>(R.id.widget_header).visibility)
+            assertEquals(View.VISIBLE, wv.findViewById<View>(R.id.widget_header_img).visibility)
+            snapView(wv, "38-osrs-widget-large")
+            // switching back restyles the same frame (no stale OSRS pieces)
+            LearnApp.prefs(ctx).edit().putString("theme", "dark").commit()
+            val wd = widgetView(400, 760)
+            assertEquals(View.VISIBLE, wd.findViewById<View>(R.id.widget_header).visibility)
+            assertEquals(View.GONE, wd.findViewById<View>(R.id.widget_header_img).visibility)
+            Repo.deleteLesson(l)
         } finally { LocalModels.abiOverride = true }
     }
 
