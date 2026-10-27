@@ -416,6 +416,8 @@ class ScreenshotTest {
             val la = Robolectric.buildActivity(LessonActivity::class.java, android.content.Intent(ctx, LessonActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
             assertTrue(findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }.size >= 2)
             assertTrue(findAll(la.window.decorView) { it is android.widget.SeekBar }.isNotEmpty())
+            findScroll(la.window.decorView)!!.let { sv0 -> // kit 1.3 scrollbar: always visible and kept inside the screen frame
+                assertTrue(!sv0.isScrollbarFadingEnabled && sv0.paddingRight > 0 && sv0.paddingRight == sv0.paddingLeft) }
             snap(la, "32-osrs-lesson")
             val sv = findScroll(la.window.decorView)!!
             val card = findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }[1]
@@ -480,6 +482,27 @@ class ScreenshotTest {
             val wd = widgetView(400, 760)
             assertEquals(View.VISIBLE, wd.findViewById<View>(R.id.widget_header).visibility)
             assertEquals(View.GONE, wd.findViewById<View>(R.id.widget_header_img).visibility)
+            Repo.deleteLesson(l)
+        } finally { LocalModels.abiOverride = true }
+    }
+
+    /** Kit 1.3 readability: OSRS home, lesson and tutor at the smallest and largest text sizes. */
+    @Test fun osrsTextSizes() {
+        val f = System.getProperty("topics.file").orEmpty()
+        Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+        org.robolectric.RuntimeEnvironment.setQualifiers("+night")
+        LocalModels.abiOverride = false
+        try {
+            val l = lessonSample; l.chat += Msg("user", "Why does it only send power to the rear when the front slips?")
+            l.chat += Msg("assistant", "Because the Haldex coupling is normally open; slip builds pressure and clamps the clutch pack.")
+            repeat(4) { l.chat += Msg("user", "And what happens on a long wet hill climb, step ${it + 1}?"); l.chat += Msg("assistant", "The pump keeps pressure up while the speed difference lasts, so the rear axle stays engaged and the car keeps climbing without the fronts spinning.") }
+            Repo.addLesson(l, emptyList())
+            for (k in listOf("small", "xlarge")) {
+                LearnApp.prefs(ctx).edit().putString("theme", "osrs").putString("font_size", k).commit()
+                snap(Robolectric.buildActivity(MainActivity::class.java).setup().get().also { idle() }, "40-osrs-home-text-$k")
+                snap(Robolectric.buildActivity(LessonActivity::class.java, android.content.Intent(ctx, LessonActivity::class.java).putExtra("id", l.id)).setup().get().also { idle() }, "41-osrs-lesson-text-$k")
+                snap(Robolectric.buildActivity(ChatActivity::class.java, android.content.Intent(ctx, ChatActivity::class.java).putExtra("id", l.id)).setup().get().also { idle() }, "42-osrs-tutor-text-$k")
+            }
             Repo.deleteLesson(l)
         } finally { LocalModels.abiOverride = true }
     }

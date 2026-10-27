@@ -110,6 +110,29 @@ fun <T> Context.choiceChips(items: List<T>, selected: T, label: (T) -> String, o
     }
 }
 
+/**
+ * Kit 1.3 gives every ScrollView an always-visible stone scrollbar at its right edge, but the screen frame
+ * (Os.applyScreenFrame, a foreground) is drawn over the outer edge of full-width scroll views and would hide it.
+ * Pad each full-width ScrollView by the frame's border so the scrollbar sits just inside the frame, in the 16 dp
+ * gutter Learn's content already has (scrollbar 8 dp, so it never overlaps cards, tiles or text). The tutor's
+ * chatbox scroll gets the same padding on top of its 9-patch padding, so the bar sits inside the carved border.
+ * Watches layouts so scroll views added later (home tabs) are handled too.
+ */
+fun keepScrollbarsInsideFrame(root: View) {
+    val pad = android.graphics.Rect().also { androidx.core.content.ContextCompat.getDrawable(root.context, R.drawable.os_screen_frame)?.getPadding(it) }
+    val side = maxOf(pad.left, pad.right)
+    if (side <= 0) return
+    fun walk(v: View) {
+        if (v is ScrollView && v.getTag(R.id.learn_scroll_gutter) == null) {
+            v.setTag(R.id.learn_scroll_gutter, true)
+            v.setPadding(v.paddingLeft + side, v.paddingTop, v.paddingRight + side, v.paddingBottom)
+        }
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+    }
+    walk(root)
+    root.viewTreeObserver.addOnGlobalLayoutListener { walk(root) }
+}
+
 fun Context.toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 fun Context.openUrl(url: String) = runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
@@ -251,7 +274,7 @@ open class BaseActivity : AppCompatActivity() {
         }
         if (isOsrs()) root.setBackgroundResource(R.drawable.os_stone_bg) else root.setBackgroundColor(attrColor(com.google.android.material.R.attr.colorSurface))
         setContentView(root)
-        if (isOsrs()) com.josh.oldschool.Os.applyScreenFrame(root) // carved riveted frame that follows the system-bar insets
+        if (isOsrs()) { com.josh.oldschool.Os.applyScreenFrame(root); keepScrollbarsInsideFrame(root) } // carved riveted frame that follows the system-bar insets
     }
 
     // -------------------------------------------------------------- provider switcher

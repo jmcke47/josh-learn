@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- tag: ScrollView already padded inside the OSRS screen frame (see keepScrollbarsInsideFrame) -->
+    <item name="learn_scroll_gutter" type="id" />
+</resources>
