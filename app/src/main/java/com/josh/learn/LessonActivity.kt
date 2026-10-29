@@ -48,7 +48,12 @@ class LessonActivity : BaseActivity() {
     }
 
     private fun build() = vbox(16) {
-        addView(label(lesson.title, com.google.android.material.R.attr.textAppearanceHeadlineSmall))
+        addView(hbox {
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(label(Symbols.of(lesson)).apply { textSize = 36f; setPadding(0, 0, dp(12), 0); contentDescription = "Lesson symbol"
+                setOnClickListener { showSymbolPicker(lesson) { recreate() } } })
+            addView(label(lesson.title, com.google.android.material.R.attr.textAppearanceHeadlineSmall), LinearLayout.LayoutParams(0, -2, 1f))
+        })
         addView(muted(listOf(lesson.difficulty.label, lesson.length.label, "created ${relTime(lesson.createdAt)}").joinToString(" · ")))
         if (lesson.isOffline || lesson.model != null) addView(muted(
             if (lesson.isOffline) "⚠ Made offline by ${lesson.model!!.removePrefix("Offline · ")}. Offline lessons are simpler and may contain mistakes; double-check important facts."

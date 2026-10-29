@@ -507,12 +507,131 @@ class ScreenshotTest {
         } finally { LocalModels.abiOverride = true }
     }
 
+    // ================================================================= v1.4.5: a fitting symbol for every lesson and topic
+
+    private fun lessonOf(title: String, topic: String = title, cat: String? = null) = Lesson(topic = topic, title = title, difficulty = Difficulty.BEGINNER,
+        length = LessonLength.SHORT, overview = "Overview of $title.", concepts = listOf(Concept("Idea", "Explanation.", "", "")), glossary = emptyList(), takeaways = emptyList(), category = cat)
+
+    @Test fun symbolSuggester() {
+        // wide keyword map across areas
+        val cases = mapOf("Intro to Kotlin coroutines" to "💻", "How LLMs predict the next word" to "🤖", "Black holes and event horizons" to "🌌",
+            "The fall of the Roman Empire" to "🏰", "Japanese for beginners" to "🇯🇵", "Spanish verbs" to "🇪🇸", "ETF investing basics" to "📈",
+            "Budgeting and tax returns" to "💰", "Sleep and recovery" to "😴", "Heart health" to "❤️", "Speedrunning Old School RuneScape" to "🎮",
+            "Guitar chord shapes" to "🎸", "Music theory: rhythm" to "🎵", "How vaccines train the immune system" to "🦠", "CRISPR gene editing" to "🧬",
+            "Home network VLANs" to "🖥️", "Password managers and phishing" to "🔐", "Solar panel inverters" to "☀️", "Volcanoes" to "🌋",
+            "World War 2 in the Pacific" to "🎖️", "Chess openings" to "♟️", "Sourdough starter" to "🍞", "Calculus limits" to "➗", "Stoic philosophy" to "🤔")
+        cases.forEach { (t, e) -> assertEquals(t, e, Symbols.match(t)) }
+        // topic suggester (new-topic dialog) keeps its old picks and never falls back to the star
+        assertEquals("🔧", Topics.suggestEmoji("Welding basics")); assertEquals("🚗", Topics.suggestEmoji("Fixing my car"))
+        assertEquals("🇯🇵", Topics.suggestEmoji("Learning Japanese"))
+        val odd = listOf("Zxq", "Qwerty plinth", "Floop", "Mnemosyne's ledger", "Blorb 7", "Xyzzy", "Untitled")
+        odd.forEach { t -> val e = Topics.suggestEmoji(t); assertTrue(e != "⭐" && e in Symbols.fallbacks); assertEquals(e, Symbols.fallback(t)) }
+        assertTrue(odd.map { Symbols.fallback(it) }.toSet().size >= 4) // varied, not one default
+        // lessons: own title first, then the topic's emoji, then topic words, then the hash fallback
+        assertEquals("🚗", Symbols.forLesson("How a Haldex AWD system works", "Cars", null))
+        assertEquals("🌱", Symbols.forLesson("Week 3 notes", "Whatever", "🌱"))
+        assertEquals("🎸", Symbols.forLesson("Week 3 notes", "Guitar practice", "⭐"))
+        assertEquals(Symbols.fallback("Week 3 notes"), Symbols.forLesson("Week 3 notes", "Zxq", null))
+        // new lessons get one when saved (quick, one-off, path…)
+        val l = lessonOf("Chess endgames"); Repo.addLesson(l, emptyList()); assertEquals("♟️", l.emoji)
+        assertEquals("♟️", Lesson.fromJson(l.toJson()).emoji); Repo.deleteLesson(l)
+    }
+
+    @Test fun symbolMigration() {
+        // a library saved by v1.4.4: no emoji fields at all
+        val old = listOf(lessonOf("Intro to Python"), lessonOf("Week 3 notes", "Zxq"), lessonOf("Muscle groups", "Gym"))
+            .map { Lesson.fromJson(it.toJson().apply { remove("emoji"); remove("emojiPicked") }) }
+        old.forEach { assertEquals(null, it.emoji) }
+        val mine = lessonOf("Dinosaurs").apply { emoji = "🦖"; emojiPicked = true }
+        Repo.lessons.addAll(old); Repo.lessons.add(mine)
+        // his own topics saved by v1.4.4 (emoji ⭐ = old default, or picked by hand)
+        Topics.customFile(ctx).writeText("""{"version":1,"topics":[
+            {"id":"c:aaaa0001","title":"Zxq lore","emoji":"⭐","description":"","createdAt":3},
+            {"id":"c:aaaa0002","title":"Welding basics","emoji":"⭐","description":"","createdAt":2},
+            {"id":"c:aaaa0003","title":"Sourdough","emoji":"🥐","description":"","createdAt":1}]}""")
+        LearnApp.prefs(ctx).edit().remove("symbols_migration").commit()
+        val changed = Symbols.migrate(ctx)
+        assertEquals(4, changed) // 3 lessons + "Zxq lore"
+        assertEquals(listOf("💻", Symbols.fallback("Week 3 notes"), "💪"), old.map { it.emoji })
+        assertEquals("🦖", mine.emoji) // his pick is never overwritten
+        val t = Topics.custom(ctx).associateBy { it.title }
+        assertTrue(t["Zxq lore"]!!.emoji != "⭐" && !t["Zxq lore"]!!.emojiPicked)
+        assertEquals("⭐", t["Welding basics"]!!.emoji); assertTrue(t["Welding basics"]!!.emojiPicked) // old suggester said 🔧, so ⭐ was his choice
+        assertEquals("🥐", t["Sourdough"]!!.emoji); assertTrue(t["Sourdough"]!!.emojiPicked)
+        // runs once; widget and home now show the new symbol
+        assertEquals(0, Symbols.migrate(ctx))
+        assertTrue(TopicsWidget.items(ctx).first { it.title == "Zxq lore" }.emoji != "⭐")
+        // editing keeps a picked symbol
+        Topics.saveCustomTopic(ctx, "c:aaaa0003", "Sourdough bread", "🥐", "")
+        assertEquals("🥐", Topics.custom(ctx).first { it.customId == "c:aaaa0003" }.emoji)
+        Repo.lessons.removeAll(old + mine)
+    }
+
+    private fun seedVariedLibrary(): List<Lesson> {
+        val ls = listOf(lessonOf("How a Haldex AWD system works", cat = "4wd & car mechanics"), lessonOf("Black holes and event horizons"), lessonOf("ETF investing basics"),
+            lessonOf("Japanese for beginners: hiragana"), lessonOf("How LLMs predict the next word"), lessonOf("The fall of the Roman Empire"),
+            lessonOf("Guitar chord shapes"), lessonOf("CRISPR gene editing"), lessonOf("Week 3 revision notes", "Misc"))
+        ls.reversed().forEach { Repo.addLesson(it, emptyList()) }
+        return ls
+    }
+
+    private fun showLibrary(a: MainActivity) {
+        val nav = findAll(a.window.decorView) { it is com.google.android.material.bottomnavigation.BottomNavigationView }.single() as com.google.android.material.bottomnavigation.BottomNavigationView
+        nav.selectedItemId = nav.menu.getItem(1).itemId; idle()
+    }
+
+    @Test fun symbolScreens() {
+        val f = System.getProperty("topics.file").orEmpty()
+        Topics.importJson(ctx, if (f.isNotEmpty() && File(f).exists()) File(f).readText() else sample)
+        Topics.saveCustomTopic(ctx, null, "Zxq lore", "", "")
+        LocalModels.abiOverride = false
+        val ls = seedVariedLibrary()
+        try {
+            for (theme in listOf("dark", "osrs")) {
+                LearnApp.prefs(ctx).edit().putString("theme", theme).commit()
+                org.robolectric.RuntimeEnvironment.setQualifiers("+night")
+                val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+                showLibrary(a)
+                val t = texts(a.window.decorView)
+                listOf("🚗", "🌌", "📈", "🇯🇵", "🤖", "🏰", "🎸", "🧬").forEach { e -> assertTrue("$theme $e", t.contains(e)) }
+                assertTrue(!t.contains("⭐"))
+                snap(a, "50-library-symbols-$theme")
+                // long-press → Change symbol → picker
+                val card = findAll(a.window.decorView) { it.contentDescription == "Guitar chord shapes" }.first()
+                card.performLongClick(); idle()
+                val menu = lastMenu!!; assertTrue(texts(menu.window!!.decorView).any { it.startsWith("Change symbol") })
+                if (theme == "osrs") overlayShot(a, menu, "51-library-long-press-osrs")
+                fun clickText(v: View, s: String): Boolean = if (v is android.widget.TextView && v.text.toString().startsWith(s) && (v.hasOnClickListeners() || (v.parent as? View)?.hasOnClickListeners() == true)) { if (v.hasOnClickListeners()) v.performClick() else (v.parent as View).performClick(); true } else (v as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).any { clickText(g.getChildAt(it), s) } } ?: false
+                if (menu is androidx.appcompat.app.AlertDialog && menu.listView != null && theme != "osrs") menu.listView.performItemClick(null, 1, 1) else assertTrue(clickText(menu.window!!.decorView, "Change symbol"))
+                idle()
+                val picker = lastSymbolPicker!!; assertTrue(picker.isShowing)
+                assertTrue(texts(picker.window!!.decorView).contains("🎸"))
+                overlayShot(a, picker, "52-change-symbol-picker-$theme")
+                // pick 🥁 and save
+                findAll(picker.window!!.decorView) { it is com.google.android.material.chip.Chip && it.text.toString() == "🎲" }.first().performClick()
+                picker.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+                idle()
+                assertEquals("🎲", ls.first { it.title == "Guitar chord shapes" }.emoji)
+                assertTrue(ls.first { it.title == "Guitar chord shapes" }.emojiPicked)
+                ls.first { it.title == "Guitar chord shapes" }.apply { emoji = "🎸"; emojiPicked = false }
+                // home (recent lessons + topic tiles) and the widget
+                val h = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
+                assertTrue(texts(h.window.decorView).any { it.startsWith("🚗 How a Haldex") })
+                snap(h, "53-home-symbols-$theme")
+                snapView(widgetView(400, 760), "54-widget-symbols-$theme")
+                val la = Robolectric.buildActivity(LessonActivity::class.java, android.content.Intent(ctx, LessonActivity::class.java).putExtra("id", ls[1].id)).setup().get(); idle()
+                assertTrue(texts(la.window.decorView).contains("🌌"))
+                if (theme == "osrs") snap(la, "55-lesson-header-symbol-osrs")
+            }
+        } finally { LocalModels.abiOverride = true; ls.forEach { Repo.deleteLesson(it) } }
+    }
+
     // ================================================================= v1.4.1: Josh's own topics
 
     @Test fun customTopicsModel() {
         assertEquals("🔧", Topics.suggestEmoji("Welding basics")); assertEquals("🍳", Topics.suggestEmoji("Sourdough baking"))
         assertEquals("🚗", Topics.suggestEmoji("Fixing my car")); assertTrue(Topics.suggestEmoji("Lab career") != "🚗")
-        assertEquals("⭐", Topics.suggestEmoji("Zxq")); assertEquals("🎸", Topics.suggestEmoji("Zxq", "learn guitar chords"))
+        assertTrue(Topics.suggestEmoji("Zxq") != "⭐" && Topics.suggestEmoji("Zxq") == Topics.suggestEmoji("Zxq")); assertEquals("🎸", Topics.suggestEmoji("Zxq", "learn guitar chords"))
         val w = Topics.saveCustomTopic(ctx, null, "  Welding   basics ", "", "MIG vs TIG\nReading a weld", now = 1000)
         assertEquals("Welding basics", w.title); assertEquals("🔧", w.emoji); assertTrue(w.customId!!.startsWith("c:"))
         assertEquals(listOf("Welding basics: MIG vs TIG", "Welding basics: Reading a weld"), w.subtopics)

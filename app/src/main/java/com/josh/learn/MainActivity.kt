@@ -330,7 +330,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun miniLessonCard(l: Lesson) = card(top = 0, onClick = { startActivity(Intent(this, LessonActivity::class.java).putExtra("id", l.id)) }) {
-        addView(label((Topics.category(l.category)?.emoji ?: "📘") + " " + l.title, bold = true).apply { maxLines = 2 })
+        addView(label(Symbols.of(l) + " " + l.title, bold = true).apply { maxLines = 2 })
         addView(muted("${l.difficulty.label} · ${relTime(l.lastOpened)}").apply { textSize = 12f })
         addView(progressBar(l.progressPercent))
     }
@@ -404,8 +404,27 @@ class MainActivity : BaseActivity() {
         progress = pct; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
     }
 
+    /** Long-press a lesson in the Library: open, change its symbol, or delete (kit "Choose Option" menu in OSRS). */
+    fun lessonMenu(l: Lesson) {
+        val opts = listOf("Open", "Change symbol", "Delete")
+        optionsMenu(l.title, opts) { i ->
+            when (opts[i]) {
+                "Open" -> startActivity(Intent(this, LessonActivity::class.java).putExtra("id", l.id))
+                "Change symbol" -> showSymbolPicker(l) { render(); TopicsWidget.refresh(this) }
+                "Delete" -> appDialog(this).setTitle("Delete this lesson?").setMessage("Its flashcards and chat are deleted too.")
+                    .setNegativeButton(android.R.string.cancel, null).setPositiveButton("Delete") { _, _ -> Repo.deleteLesson(l); render() }.show()
+            }
+        }
+    }
+
     private fun lessonCard(l: Lesson) = card(onClick = { startActivity(Intent(this, LessonActivity::class.java).putExtra("id", l.id)) }) {
-        addView(label(l.title, bold = true))
+        setOnLongClickListener { lessonMenu(l); true }
+        contentDescription = l.title
+        addView(hbox {
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(label(Symbols.of(l)).apply { textSize = 30f; setPadding(0, 0, dp(12), 0); contentDescription = "Symbol" })
+            addView(label(l.title, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+        })
         val cards = Repo.cardsFor(l.id).size
         addView(muted("${l.difficulty.label} · ${l.concepts.size} concepts · $cards cards · ${relTime(l.lastOpened)}"))
         addView(hbox {

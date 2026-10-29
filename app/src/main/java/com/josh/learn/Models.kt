@@ -29,6 +29,10 @@ class Lesson(
     /** Who generated it, e.g. "Offline · Qwen3 0.6B" or "Gemini · gemini-3.8-flash". */
     var model: String? = null,
     var depth: Depth = Depth.NORMAL,
+    /** Symbol shown for this lesson (Library, home, lesson header). null = not chosen yet (see Symbols). */
+    var emoji: String? = null,
+    /** Josh changed the symbol himself. */
+    var emojiPicked: Boolean = false,
     var createdAt: Long = System.currentTimeMillis(),
     var lastOpened: Long = System.currentTimeMillis(),
     val understood: MutableSet<Int> = mutableSetOf(),
@@ -53,7 +57,7 @@ class Lesson(
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("topic", topic); put("title", title); put("difficulty", difficulty.name); put("length", length.name)
         put("overview", overview); put("sourceUrl", sourceUrl ?: JSONObject.NULL); put("pathId", pathId ?: JSONObject.NULL)
-        put("category", category ?: JSONObject.NULL); put("model", model ?: JSONObject.NULL); put("depth", depth.name)
+        put("category", category ?: JSONObject.NULL); put("model", model ?: JSONObject.NULL); put("depth", depth.name); put("emoji", emoji ?: JSONObject.NULL); put("emojiPicked", emojiPicked)
         put("createdAt", createdAt); put("lastOpened", lastOpened)
         put("concepts", JSONArray().apply { concepts.forEach { put(JSONObject().put("title", it.title).put("explanation", it.explanation).put("analogy", it.analogy).put("example", it.example)) } })
         put("glossary", JSONArray().apply { glossary.forEach { put(JSONObject().put("term", it.term).put("definition", it.definition)) } })
@@ -73,6 +77,7 @@ class Lesson(
             takeaways = o.optJSONArray("takeaways").strings(),
             sourceUrl = o.optStringOrNull("sourceUrl"), pathId = o.optStringOrNull("pathId"),
             category = o.optStringOrNull("category"), model = o.optStringOrNull("model"), depth = Depth.of(o.optStringOrNull("depth")),
+            emoji = o.optStringOrNull("emoji"), emojiPicked = o.optBoolean("emojiPicked", false),
             createdAt = o.optLong("createdAt"), lastOpened = o.optLong("lastOpened"),
             understood = (0 until (o.optJSONArray("understood")?.length() ?: 0)).map { o.getJSONArray("understood").getInt(it) }.toMutableSet(),
             quizScores = o.optJSONArray("quizScores").objs().map { QuizScore(it.optInt("c"), it.optInt("t"), it.optLong("at")) }.toMutableList(),

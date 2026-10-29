@@ -47,6 +47,7 @@ object Repo {
     fun due(now: Long = System.currentTimeMillis()) = cards.filter { it.due <= now }.sortedBy { it.due }
 
     fun addLesson(l: Lesson, flashcards: List<Pair<String, String>>) {
+        if (l.emoji == null) l.emoji = Symbols.forLesson(l) // every new lesson (quick, one-off, path, topic) gets a fitting symbol
         lessons.add(0, l)
         flashcards.forEach { (f, b) -> cards += Flashcard(lessonId = l.id, front = f, back = b) }
         save()

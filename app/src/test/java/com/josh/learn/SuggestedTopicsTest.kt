@@ -14,7 +14,7 @@ class SuggestedTopicsTest {
         ]}"""
         val s = Topics.parseSuggested(json)
         assertEquals(listOf("High", "Low"), s.map { it.title })
-        assertEquals("⭐", s[0].emoji)
+        assertEquals(Symbols.fallback("High"), s[0].emoji) // no emoji in the file: a fitting or hashed symbol, never the old ⭐
         assertEquals(listOf("b", "c"), s[0].subtopics)
         assertTrue(s[0].asCategory.id.startsWith("s:high"))
     }

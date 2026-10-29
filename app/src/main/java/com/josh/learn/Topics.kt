@@ -34,7 +34,9 @@ object Topics {
     // Nothing is bundled in the APK; the import is saved privately in filesDir (kept across app updates).
     data class Suggested(val title: String, val category: String, val emoji: String, val priority: Int, val subtopics: List<String>,
                          /** Set for topics Josh made himself ("c:…", stable across renames); null for imported ones. */
-                         val customId: String? = null, val description: String = "", val createdAt: Long = 0L) {
+                         val customId: String? = null, val description: String = "", val createdAt: Long = 0L,
+                         /** Josh chose this emoji himself (never replaced automatically). */
+                         val emojiPicked: Boolean = false) {
         val isCustom get() = customId != null
         /** As a tile category (id prefixed "s:", or "c:" for his own) so the sub-topic sheet, paths and lesson emoji all work. */
         val asCategory get() = Category(customId ?: ("s:" + title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')), title, emoji, subtopics.ifEmpty { listOf(title) })
@@ -49,7 +51,7 @@ object Topics {
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             val title = o.optString("title").trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val subs = o.optJSONArray("subtopics")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotEmpty() } } ?: emptyList()
-            Suggested(title, o.optString("category").trim(), o.optString("emoji").trim().ifEmpty { "⭐" }, o.optInt("priority", 0), subs)
+            Suggested(title, o.optString("category").trim(), o.optString("emoji").trim().takeUnless { Symbols.isDefault(it) } ?: suggestEmoji(title, o.optString("category")), o.optInt("priority", 0), subs)
         }.distinctBy { it.title.lowercase() }.sortedByDescending { it.priority }
     }.getOrDefault(emptyList())
 
@@ -76,8 +78,10 @@ object Topics {
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             val title = o.optString("title").trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val desc = o.optString("description").trim()
-            Suggested(title, "Mine", o.optString("emoji").trim().ifEmpty { "⭐" }, 1000, customSubtopics(title, desc),
-                o.optString("id").ifEmpty { "c:" + title.lowercase().hashCode().toUInt().toString(16) }, desc, o.optLong("createdAt"))
+            val picked = o.optBoolean("emojiPicked", false)
+            val e = o.optString("emoji").trim()
+            Suggested(title, "Mine", if (picked) e.ifEmpty { suggestEmoji(title, desc) } else e.takeUnless { Symbols.isDefault(it) } ?: suggestEmoji(title, desc), 1000, customSubtopics(title, desc),
+                o.optString("id").ifEmpty { "c:" + title.lowercase().hashCode().toUInt().toString(16) }, desc, o.optLong("createdAt"), picked)
         }.sortedByDescending { it.createdAt }
     }.getOrDefault(emptyList())
 
@@ -90,7 +94,7 @@ object Topics {
     private fun saveCustom(c: Context, list: List<Suggested>) {
         val json = org.json.JSONObject().put("version", 1).put("topics", org.json.JSONArray().apply {
             list.forEach { s -> put(org.json.JSONObject().put("id", s.customId).put("title", s.title).put("emoji", s.emoji)
-                .put("description", s.description).put("createdAt", s.createdAt)) }
+                .put("description", s.description).put("createdAt", s.createdAt).put("emojiPicked", s.emojiPicked)) }
         }).toString(2)
         val f = customFile(c); val tmp = java.io.File(f.parentFile, f.name + ".tmp")
         tmp.writeText(json); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
@@ -101,15 +105,17 @@ object Topics {
      * Creates (id == null) or edits one of Josh's own topics. Returns it, or throws with a friendly message
      * (empty name, or a name already used by another topic).
      */
-    fun saveCustomTopic(c: Context, id: String?, title: String, emoji: String, description: String, now: Long = System.currentTimeMillis()): Suggested {
+    fun saveCustomTopic(c: Context, id: String?, title: String, emoji: String, description: String, now: Long = System.currentTimeMillis(), picked: Boolean = false): Suggested {
         val t = title.trim().replace(Regex("\\s+"), " ").take(MAX_TITLE)
         if (t.isEmpty()) throw IllegalArgumentException("Give your topic a name")
         val all = custom(c)
         if (suggested(c).any { it.title.equals(t, true) && it.customId != id }) throw IllegalArgumentException("You already have a topic called \"$t\"")
         val d = description.trim().take(MAX_DESCRIPTION)
         val old = all.firstOrNull { it.customId == id }
-        val s = Suggested(t, "Mine", emoji.trim().ifEmpty { suggestEmoji(t, d) }, 1000, customSubtopics(t, d),
-            id ?: ("c:" + java.util.UUID.randomUUID().toString().take(8)), d, old?.createdAt ?: now)
+        val e = emoji.trim()
+        val keep = (picked || old?.emojiPicked == true) && e.isNotEmpty()
+        val s = Suggested(t, "Mine", if (keep) e else e.takeUnless { Symbols.isDefault(it) } ?: suggestEmoji(t, d), 1000, customSubtopics(t, d),
+            id ?: ("c:" + java.util.UUID.randomUUID().toString().take(8)), d, old?.createdAt ?: now, keep)
         saveCustom(c, if (old != null) all.map { if (it.customId == id) s else it } else listOf(s) + all)
         return s
     }
@@ -141,9 +147,37 @@ object Topics {
         "math|maths|algebra|calculus|number" to "➗", "ufo|alien|uap" to "🛸", "sport|footy|football|cricket|rugby|soccer" to "🏉",
     ).map { (k, e) -> Regex("\\b(?:$k)", RegexOption.IGNORE_CASE) to e }
 
-    /** A fitting emoji for a new topic name (and description), or ⭐. */
+    /** A fitting emoji for a topic name (and description): the original rules, then the wide Symbols map, then a hash fallback (never ⭐). */
     fun suggestEmoji(title: String, description: String = ""): String =
+        Symbols.match(title)?.takeIf { Symbols.isFlag(it) } ?: emojiRules.firstOrNull { it.first.containsMatchIn(title) }?.second ?: Symbols.match(title)
+            ?: emojiRules.firstOrNull { it.first.containsMatchIn(description) }?.second ?: Symbols.match(description) ?: Symbols.fallback(title)
+
+    /** Old suggester (v1.4.1–1.4.4), only to tell a default ⭐ from one Josh picked when migrating. */
+    private fun oldSuggestion(title: String, description: String) =
         emojiRules.firstOrNull { it.first.containsMatchIn(title) }?.second ?: emojiRules.firstOrNull { it.first.containsMatchIn(description) }?.second ?: "⭐"
+
+    /**
+     * Migration: his own topics still stored with the old default ⭐ get a fitting symbol. A ⭐ he must have picked by hand
+     * (the old suggester would have offered something else for that name) is kept and marked as his choice.
+     */
+    fun migrateCustomEmoji(c: Context): Int {
+        val f = customFile(c); if (!f.exists()) return 0
+        val raw = runCatching { org.json.JSONObject(f.readText()).optJSONArray("topics") }.getOrNull() ?: return 0
+        val stored = (0 until raw.length()).mapNotNull { raw.optJSONObject(it) }.associateBy { it.optString("id") }
+        var n = 0
+        val list = custom(c).map { s ->
+            val o = stored[s.customId] ?: return@map s
+            if (o.has("emojiPicked")) return@map s
+            val was = o.optString("emoji").trim()
+            when {
+                !Symbols.isDefault(was) -> s.copy(emoji = was, emojiPicked = was != oldSuggestion(s.title, s.description))
+                oldSuggestion(s.title, s.description) != "⭐" -> s.copy(emoji = was, emojiPicked = true) // ⭐ chosen by hand
+                else -> { n++; s.copy(emoji = suggestEmoji(s.title, s.description), emojiPicked = false) }
+            }
+        }
+        saveCustom(c, list)
+        return n
+    }
 
     val emojiChoices = listOf("⭐", "🚗", "✈️", "🎣", "🍳", "🎸", "🎨", "📷", "🎮", "💻", "🖥️", "📱", "🤖", "🔋", "🚀", "⚛️", "🔬", "💪", "🧠", "💰",
         "🏛️", "⚖️", "🗣️", "📚", "🌱", "🐾", "🌊", "🌏", "🔧", "➗", "🛸", "🏉", "🎲", "💡")

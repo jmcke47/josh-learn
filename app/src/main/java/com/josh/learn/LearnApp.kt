@@ -15,6 +15,7 @@ class LearnApp : Application() {
             .setPrecondition { a, _ -> !Display.isCustom(a) }.build())
         Repo.init(this)
         Topics.init(this)
+        runCatching { Symbols.migrate(this) } // v1.4.5: replace the default ⭐ on saved lessons and his own topics
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(Reminders.CHANNEL, "Daily review reminder", NotificationManager.IMPORTANCE_DEFAULT)
                 .apply { description = "Reminds you when flashcards are due" })

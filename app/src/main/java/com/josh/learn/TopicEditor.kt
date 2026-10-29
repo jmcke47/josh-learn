@@ -17,8 +17,9 @@ var lastTopicEditor: AlertDialog? = null
  * and an optional starting depth. Saved on this phone; importing never touches these.
  */
 fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (Topics.Suggested) -> Unit) {
-    var emoji = existing?.emoji ?: "⭐"
-    var picked = existing != null // once Josh picks an emoji himself, stop auto-suggesting
+    var emoji = existing?.emoji ?: Topics.suggestEmoji("")
+    var picked = existing != null // once Josh picks an emoji himself (or is editing), stop auto-suggesting
+    var byHand = existing?.emojiPicked == true // saved with the topic so updates never replace it
     var depth = if (existing != null) Depths.get(this, existing.customId) else Depth.NORMAL
     val big = label(emoji).apply { textSize = 44f; gravity = Gravity.CENTER; contentDescription = "Topic emoji" }
     val (nameTil, name) = input("Topic name", value = existing?.title ?: "")
@@ -27,9 +28,9 @@ fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (T
     val (descTil, desc) = input("What do you want to learn? (optional)", multiLine = true, value = existing?.description ?: "")
     descTil.helperText = "Put each idea on its own line to make them sub-topics"
     val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-    fun setEmoji(e: String, byHand: Boolean) { emoji = e; big.text = e; if (byHand) picked = true
+    fun setEmoji(e: String, hand: Boolean) { emoji = e; big.text = e; if (hand) { picked = true; byHand = true }
         for (i in 0 until chips.childCount) (chips.getChildAt(i) as Chip).isChecked = (chips.getChildAt(i) as Chip).text == e }
-    fun suggestions() = (listOf(Topics.suggestEmoji(name.text.toString(), desc.text.toString())) + Topics.emojiChoices).distinct()
+    fun suggestions() = Symbols.choices(Topics.suggestEmoji(name.text.toString(), desc.text.toString())).let { if (emoji in it) it else listOf(emoji) + it }
     fun fillChips() {
         chips.removeAllViews()
         suggestions().forEach { e -> chips.addView(appChip("choice").apply {
@@ -67,7 +68,7 @@ fun BaseActivity.showTopicEditor(existing: Topics.Suggested? = null, onSaved: (T
     val dlg = b.create()
     dlg.setOnShowListener {
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val s = runCatching { Topics.saveCustomTopic(this, existing?.customId, name.text.toString(), emoji, desc.text.toString()) }
+            val s = runCatching { Topics.saveCustomTopic(this, existing?.customId, name.text.toString(), emoji, desc.text.toString(), picked = byHand) }
                 .getOrElse { e -> nameTil.error = e.message; name.requestFocus(); return@setOnClickListener }
             if (Depths.perTopic(this) && (existing != null || depth != Depth.NORMAL)) Depths.set(this, s.customId, depth)
             dlg.dismiss()
@@ -86,4 +87,38 @@ fun BaseActivity.confirmDeleteTopic(s: Topics.Suggested, onDone: () -> Unit) {
         .setNegativeButton(android.R.string.cancel, null)
         .setPositiveButton(if (s.isCustom) "Delete" else "Remove") { _, _ -> Topics.remove(this, s.title); onDone() }
         .show().also { lastTopicEditor = it }
+}
+
+/** Last symbol picker shown (for tests). */
+var lastSymbolPicker: AlertDialog? = null
+
+/**
+ * "Change symbol" for a lesson: the same emoji chips as the new-topic dialog (suggestion first), a big preview, and
+ * "Use suggested" to go back to the automatic pick. Saved with the lesson; updates never replace it.
+ */
+fun BaseActivity.showSymbolPicker(l: Lesson, onSaved: () -> Unit) {
+    val suggested = Symbols.forLesson(l)
+    var emoji = Symbols.of(l)
+    val big = label(emoji).apply { textSize = 44f; gravity = Gravity.CENTER; contentDescription = "Lesson symbol" }
+    val chips = com.google.android.material.chip.ChipGroup(this)
+    fun pick(e: String) { emoji = e; big.text = e
+        for (i in 0 until chips.childCount) (chips.getChildAt(i) as Chip).isChecked = (chips.getChildAt(i) as Chip).text == e }
+    Symbols.choices(suggested).let { if (emoji in it) it else listOf(emoji) + it }.forEach { e ->
+        chips.addView(appChip("choice").apply { text = e; textSize = 20f; isCheckable = true; isChecked = e == emoji; contentDescription = "Use $e"; setOnClickListener { pick(e) } })
+    }
+    val body = vbox(20) {
+        addView(hbox {
+            addView(big, LinearLayout.LayoutParams(dp(72), dp(72)))
+            addView(muted("Symbol for \"${l.title}\". Shown in the Library, on home and in the lesson.").apply { setPadding(dp(8), 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+        })
+        addView(muted("Tap a symbol (suggested: $suggested)", top = 4).apply { textSize = 12f })
+        addView(chips)
+    }
+    val dlg = appDialog(this).setTitle("Change symbol")
+        .setView(android.widget.ScrollView(this).apply { addView(body) })
+        .setNegativeButton(android.R.string.cancel, null)
+        .setNeutralButton("Use suggested") { _, _ -> l.emoji = suggested; l.emojiPicked = false; Repo.save(); onSaved() }
+        .setPositiveButton("Save") { _, _ -> l.emoji = emoji; l.emojiPicked = emoji != suggested; Repo.save(); onSaved() }
+        .create()
+    dlg.show(); lastSymbolPicker = dlg
 }
