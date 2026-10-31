@@ -119,13 +119,7 @@ class ModelDownloadService : Service() {
         ModelDownloader.update(final)
         if (final.status == ModelDownloader.Status.DONE) LocalModels.select(this, m)
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-        if (final.status != ModelDownloader.Status.PAUSED || final.message.contains("Wi-Fi")) runCatching {
-            nm.notify(NOTIF_ID + 1, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_school)
-                .setContentTitle(if (final.status == ModelDownloader.Status.DONE) "Offline AI is ready" else "Offline AI download stopped")
-                .setContentText(if (final.status == ModelDownloader.Status.DONE) "${m.short} downloaded. Josh Learn now works without internet." else final.message)
-                .setAutoCancel(true)
-                .setContentIntent(PendingIntent.getActivity(this, 4, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)).build())
-        }
+        // No "ready/stopped" notification (v1.4.6): the result shows in the app.
         stopSelf()
     }
 

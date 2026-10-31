@@ -16,12 +16,10 @@ class LearnApp : Application() {
         Repo.init(this)
         Topics.init(this)
         runCatching { Symbols.migrate(this) } // v1.4.5: replace the default ⭐ on saved lessons and his own topics
+        NoNotifications.cleanUp(this) // v1.4.6: no reminders any more; cancel old alarms and delete the old channel
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(Reminders.CHANNEL, "Daily review reminder", NotificationManager.IMPORTANCE_DEFAULT)
-                .apply { description = "Reminds you when flashcards are due" })
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(ModelDownloadService.CHANNEL, "Offline AI download", NotificationManager.IMPORTANCE_LOW))
-        Reminders.schedule(this)
+            NotificationChannel(ModelDownloadService.CHANNEL, "Offline AI download", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Shown only while the offline AI model downloads (Android requires it)" })
         LocalLlm.install(this)
     }
 

@@ -21,9 +21,8 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 class MainActivity : BaseActivity() {
     private lateinit var content: FrameLayout
     private lateinit var nav: BottomNavigationView
-    private lateinit var updater: UpdateController
+    internal lateinit var updater: UpdateController
     private var tab = TAB_HOME
-    private var pendingUpdate: UpdateController.Manifest? = null
     private var libraryQuery = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,18 +46,12 @@ class MainActivity : BaseActivity() {
 
         updater = UpdateController(this)
         if (savedInstanceState == null) {
-            updater.quietCheck { m -> pendingUpdate = m; render() }
             val prefs = LearnApp.prefs(this)
             if (Features.OFFLINE_AI && LocalModels.supported(this) && LocalModels.installed(this).isEmpty() && !ModelDownloader.state.active && !prefs.getBoolean("offline_setup_shown", false)) {
                 prefs.edit().putBoolean("offline_setup_shown", true).apply()
                 OfflineSetup.show(this) { render() }
             }
             if (intent?.action == TopicsWidget.ACTION_TOPIC) { handleWidgetIntent(intent); return }
-            if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("notif_asked", false) &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                prefs.edit().putBoolean("notif_asked", true).apply()
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-            }
         }
     }
 
@@ -87,6 +80,16 @@ class MainActivity : BaseActivity() {
         menu.add("Settings").setOnMenuItemClickListener { startActivity(Intent(this, SettingsActivity::class.java)); true }
     }
 
+    override fun onStart() {
+        super.onStart(); ModelDownloader.listen(dlListener)
+        // Cold start and every return from the background (throttled to ~10 min inside autoCheck).
+        if (!isChangingConfigurations) updater.autoCheck { m -> showUpdatePrompt(m) }
+    }
+
+    /** Non-blocking update prompt (Update / Later) above the bottom nav. */
+    internal fun showUpdatePrompt(m: UpdateController.Manifest) =
+        UpdatePrompt.show(this, m, bottomOffset = if (::nav.isInitialized) nav.height else 0) { updater.startUpdate(m) }
+
     override fun onResume() {
         super.onResume()
         updater.onResume()
@@ -111,7 +114,6 @@ class MainActivity : BaseActivity() {
     private val dlListener: (ModelDownloader.State) -> Unit = { st -> offlineStatus?.let { updateOfflineCard(it, st) } }
     private var offlineStatus: android.widget.TextView? = null
 
-    override fun onStart() { super.onStart(); ModelDownloader.listen(dlListener) }
     override fun onStop() { super.onStop(); ModelDownloader.unlisten(dlListener) }
 
     private fun updateOfflineCard(tv: android.widget.TextView, st: ModelDownloader.State) {
@@ -164,21 +166,15 @@ class MainActivity : BaseActivity() {
     }
 
     private fun home(): View = vbox(16) {
-        pendingUpdate?.let { m ->
-            addView(card(top = 0, onClick = { updater.startUpdate(m) }) {
-                addView(label("Update available: v${m.versionName}", bold = true))
-                addView(muted("Tap to download and install"))
-            })
-        }
         if (providers.active != Provider.LOCAL && providers.ready().isEmpty()) {
-            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }) {
+            addView(card(top = 0, onClick = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }) {
                 addView(label("✨ Set up AI", bold = true))
                 LocalModels.unsupportedReason(context)?.takeIf { Features.OFFLINE_AI }?.let { addView(muted(it)) }
                 addView(muted("Add a free Google Gemini key in Settings (takes a minute). Grok, ChatGPT and Claude work too. Tap to open Settings."))
             })
         }
         if (Features.OFFLINE_AI && providers.active == Provider.LOCAL && LocalModels.usable(context) == null) {
-            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = {
+            addView(card(top = 0, onClick = {
                 val st = ModelDownloader.state
                 if (st.active) startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                 else if ((st.status == ModelDownloader.Status.PAUSED || st.status == ModelDownloader.Status.FAILED) && st.model != null) {
@@ -274,7 +270,7 @@ class MainActivity : BaseActivity() {
             addView(title("More to explore", top = 20))
             val more = if (isOsrs()) osGrid() else grid(3); builtIns(more, small = true); addView(more)
         } else {
-            addView(card(top = if (pendingUpdate != null) 10 else 0, onClick = { importTopics() }) {
+            addView(card(top = 0, onClick = { importTopics() }) {
                 addView(label("📥 Import your Grok history", com.google.android.material.R.attr.textAppearanceTitleMedium, bold = true,
                     color = attrColor(com.google.android.material.R.attr.colorOnPrimaryContainer)))
                 addView(label("Pick your Grok data export (.zip) and Josh Learn builds your own topic tiles from what you chat about. It's analysed on this phone and stays private. A topics .json file works too.",
@@ -475,8 +471,7 @@ class MainActivity : BaseActivity() {
                 startActivity(Intent(this@MainActivity, ReviewActivity::class.java).putExtra(ReviewActivity.EXTRA_CRAM, true))
             })
         })
-        addView(muted("Flashcards are created automatically with each lesson and scheduled with spaced repetition (SM-2). " +
-            "Daily reminder: " + (if (Reminders.enabled(this@MainActivity)) "%02d:%02d".format(Reminders.hour(context), Reminders.minute(context)) else "off") + " (change in Settings).", top = 12))
+        addView(muted("Flashcards are created automatically with each lesson and scheduled with spaced repetition (SM-2).", top = 12))
         val byLesson = Repo.cards.groupBy { it.lessonId }
         if (byLesson.isNotEmpty()) addView(title("By lesson"))
         byLesson.forEach { (id, cs) ->

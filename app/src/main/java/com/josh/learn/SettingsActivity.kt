@@ -185,29 +185,14 @@ class SettingsActivity : BaseActivity() {
             })
             addView(muted("Off: one depth (Like I'm 5 … Expert) for everything."))
 
-            // ---------------- Reminder
-            addView(title("Daily review reminder"))
-            val time = muted("")
-            fun showTime() { time.text = "Reminds you at %02d:%02d if flashcards are due.".format(Reminders.hour(context), Reminders.minute(context)) }
-            showTime()
-            addView(MaterialSwitch(context).apply {
-                text = "Remind me to review"; isChecked = Reminders.enabled(context)
-                setOnCheckedChangeListener { _, c -> prefs.edit { putBoolean("reminder_on", c) }; Reminders.schedule(context) }
-            })
-            addView(time)
-            addView(outlined("Change time") {
-                val picker = MaterialTimePicker.Builder().setTimeFormat(TimeFormat.CLOCK_24H)
-                    .setHour(Reminders.hour(this@SettingsActivity)).setMinute(Reminders.minute(this@SettingsActivity)).setTitleText("Reminder time").build()
-                picker.addOnPositiveButtonClickListener {
-                    prefs.edit { putInt("reminder_hour", picker.hour); putInt("reminder_minute", picker.minute) }
-                    Reminders.schedule(this@SettingsActivity); showTime()
-                }
-                picker.show(supportFragmentManager, "time")
-            })
-
             // ---------------- Updates
             addView(title("Updates"))
             addView(muted("Josh Learn v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"))
+            addView(MaterialSwitch(context).apply {
+                text = "Check for updates on open"; isChecked = UpdateController.checkOnOpen(context)
+                setOnCheckedChangeListener { _, c -> prefs.edit { putBoolean(UpdateController.PREF_ON_OPEN, c) } }
+            })
+            addView(muted("Checks quietly when you open the app (at most every 10 minutes) and offers new versions."))
             addView(button("Check for updates") { updater.checkForUpdates() })
             addView(textBtn("Advanced: update source URL") { updater.editUpdateUrl() })
 

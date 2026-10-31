@@ -137,12 +137,3 @@ class HtmlTextTest {
     }
 }
 
-class RemindersTest {
-    @Test fun nextTriggerIsInFutureWithinADay() {
-        val now = System.currentTimeMillis()
-        val t = Reminders.nextTrigger(now, 19, 0)
-        assertTrue(t > now); assertTrue(t - now <= 86_400_000L + 3_600_000L)
-        val cal = java.util.Calendar.getInstance().apply { timeInMillis = t }
-        assertEquals(19, cal.get(java.util.Calendar.HOUR_OF_DAY)); assertEquals(0, cal.get(java.util.Calendar.MINUTE))
-    }
-}
