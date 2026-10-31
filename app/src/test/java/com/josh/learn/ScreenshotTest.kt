@@ -30,7 +30,7 @@ class ScreenshotTest {
     @org.junit.After fun tidyKit() = com.josh.oldschool.OsAnimations.reset()
 
     @Before fun seed() {
-        LearnApp.prefs(ctx).edit().putBoolean("offline_setup_shown", true).putBoolean("notif_asked", true).commit()
+        LearnApp.prefs(ctx).edit().putBoolean("offline_setup_shown", true).putBoolean(UpdateController.PREF_ON_OPEN, false).commit() // no network from onStart in tests
         ModelDownloader.update(ModelDownloader.State())
         LocalModels.abiOverride = true // Robolectric's ABI list isn't arm64
         Topics.clearImported(ctx)
@@ -416,8 +416,8 @@ class ScreenshotTest {
             val la = Robolectric.buildActivity(LessonActivity::class.java, android.content.Intent(ctx, LessonActivity::class.java).putExtra("id", l.id)).setup().get(); idle()
             assertTrue(findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }.size >= 2)
             assertTrue(findAll(la.window.decorView) { it is android.widget.SeekBar }.isNotEmpty())
-            findScroll(la.window.decorView)!!.let { sv0 -> // kit 1.3 scrollbar: always visible and kept inside the screen frame
-                assertTrue(!sv0.isScrollbarFadingEnabled && sv0.paddingRight > 0 && sv0.paddingRight == sv0.paddingLeft) }
+            findScroll(la.window.decorView)!!.let { sv0 -> // kit 1.3.1: scrollbar always visible, kit raises right padding past the frame band
+                assertTrue(!sv0.isScrollbarFadingEnabled && sv0.paddingRight >= la.resources.getDimensionPixelSize(com.josh.oldschool.R.dimen.os_frame_band)) }
             snap(la, "32-osrs-lesson")
             val sv = findScroll(la.window.decorView)!!
             val card = findAll(la.window.decorView) { it is com.josh.oldschool.OsLessonCard }[1]
