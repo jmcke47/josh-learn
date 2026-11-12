@@ -12,9 +12,11 @@ fun loadProps(name: String): Properties = Properties().apply {
 val versionProps = loadProps("version.properties")
 val updateProps = loadProps("update.properties")
 val keystoreProps = loadProps("keystore/keystore.properties")
+val playKeystoreProps = loadProps("keystore/play-upload.properties")
 
 android {
     namespace = "com.josh.learn"
+    // Play requires target API 36 (Android 16) as of 31 Aug 2026; 37 already exceeds that.
     compileSdk = 37
 
     defaultConfig {
@@ -30,6 +32,7 @@ android {
             "\"" + (project.findProperty("updateManifestUrl") as String?
                 ?: updateProps.getProperty("UPDATE_MANIFEST_URL", "")) + "\""
         )
+        buildConfigField("boolean", "PLAY_DISTRIBUTION", "false")
     }
 
     signingConfigs {
@@ -38,6 +41,29 @@ android {
             storePassword = keystoreProps.getProperty("storePassword")
             keyAlias = keystoreProps.getProperty("keyAlias")
             keyPassword = keystoreProps.getProperty("keyPassword")
+        }
+        if (playKeystoreProps.getProperty("storeFile") != null) {
+            create("play") {
+                storeFile = rootProject.file("keystore/" + playKeystoreProps.getProperty("storeFile", "play-upload.jks"))
+                storePassword = playKeystoreProps.getProperty("storePassword")
+                keyAlias = playKeystoreProps.getProperty("keyAlias")
+                keyPassword = playKeystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            isDefault = true
+            buildConfigField("boolean", "PLAY_DISTRIBUTION", "false")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "PLAY_DISTRIBUTION", "true")
+            // Play policy forbids self-updating; empty URL so any leftover checker is a no-op.
+            buildConfigField("String", "UPDATE_MANIFEST_URL", "\"\"")
         }
     }
 
@@ -49,7 +75,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            // Same key for debug too, so any build can update any other.
+            // Same key for debug too, so any GitHub build can update any other GitHub build.
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -68,6 +94,7 @@ android {
             it.systemProperty("topics.file", (project.findProperty("topicsFile") as String?) ?: "")
             it.systemProperty("grok.zip", (project.findProperty("grokZip") as String?) ?: "")
             it.systemProperty("project.root", rootProject.projectDir.absolutePath)
+            it.systemProperty("play.screens.dir", (project.findProperty("playScreensDir") as String?) ?: "")
         }
     }
 
@@ -86,8 +113,16 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     implementation("com.google.code.gson:gson:2.14.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core:1.7.0")
+}
+
+// Keep the usual test command working now that there are product flavors.
+tasks.register("testDebugUnitTest") {
+    group = "verification"
+    description = "Runs unit tests for githubDebug and playDebug."
+    dependsOn("testGithubDebugUnitTest", "testPlayDebugUnitTest")
 }

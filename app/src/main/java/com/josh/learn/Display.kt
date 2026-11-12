@@ -7,7 +7,16 @@ import android.content.res.Configuration
 object Display {
     val themes = listOf("system", "light", "dark", "amoled", "osrs")
     fun themeLabel(t: String) = when (t) { "amoled" -> "AMOLED black"; "osrs" -> "OSRS"; else -> t.replaceFirstChar(Char::uppercase) }
-    fun theme(c: Context): String = LearnApp.prefs(c).getString("theme", "system")!!.takeIf { it in themes } ?: "system"
+    fun storedTheme(c: Context): String = LearnApp.prefs(c).getString("theme", "system")!!.takeIf { it in themes } ?: "system"
+    /** Effective theme: a saved OSRS/AMOLED choice falls back until Premium is unlocked. */
+    fun theme(c: Context): String {
+        val raw = storedTheme(c)
+        return when {
+            raw == "osrs" && !Premium.allowed(c, Premium.Feature.THEME_OSRS) -> "system"
+            raw == "amoled" && !Premium.allowed(c, Premium.Feature.THEME_AMOLED) -> "system"
+            else -> raw
+        }
+    }
     /** Themes with their own fixed palette (no Material You wallpaper colours). */
     fun isCustom(c: Context) = theme(c) in setOf("amoled", "osrs")
     fun themeRes(c: Context): Int = when (theme(c)) {

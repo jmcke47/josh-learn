@@ -5,3 +5,7 @@
 -dontwarn com.google.ai.edge.litertlm.**
 -keep class com.google.gson.** { *; }
 -dontwarn kotlin.reflect.**
+
+# Play Billing Library
+-keep class com.android.vending.billing.** { *; }
+-keep class com.android.billingclient.** { *; }

@@ -15,6 +15,9 @@ class NewLessonActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(EXTRA_PATH, false) && !Premium.canCreatePath(this)) {
+            PremiumActivity.show(this, Premium.Feature.LEARNING_PATHS); finish(); return
+        }
         val prefs = LearnApp.prefs(this)
         difficulty = enumOr(prefs.getString("difficulty", null), Difficulty.BEGINNER)
         length = enumOr(prefs.getString("length", null), LessonLength.MEDIUM)

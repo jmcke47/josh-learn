@@ -33,6 +33,7 @@ class UpdatesNotificationsTest {
     private val newer = UpdateController.Manifest(99, "9.9.9", "https://example.invalid/a.apk", "Lessons get symbols; no more notifications.")
 
     @Before fun seed() {
+        org.junit.Assume.assumeFalse("github-only UI", com.josh.learn.BuildConfig.PLAY_DISTRIBUTION)
         LearnApp.prefs(ctx).edit().putBoolean("offline_setup_shown", true).putBoolean(UpdateController.PREF_ON_OPEN, false).remove("theme").commit()
         ctx.getSharedPreferences("updater", 0).edit().clear().commit()
         UpdatePrompt.snoozed.clear()

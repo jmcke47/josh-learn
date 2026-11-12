@@ -138,8 +138,11 @@ open class BaseActivity : AppCompatActivity() {
     private val topicsPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importTopicsFrom(uri)
     }
-    fun importTopics() = runCatching { topicsPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/json", "text/plain", "*/*")) }
-        .onFailure { toast("No file picker available on this phone") }
+    fun importTopics() {
+        if (!Premium.allowed(this, Premium.Feature.EXPORT)) { PremiumActivity.show(this, Premium.Feature.EXPORT); return }
+        runCatching { topicsPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/json", "text/plain", "*/*")) }
+            .onFailure { toast("No file picker available on this phone") }
+    }
 
     private sealed class ImportOutcome {
         class Json(val text: String) : ImportOutcome()
@@ -280,6 +283,7 @@ open class BaseActivity : AppCompatActivity() {
         val all = Provider.visible
         val labels = all.map { p ->
             val state = when {
+                p != Provider.LOCAL && !Premium.allowed(this, Premium.Feature.CLOUD_AI) -> "Premium"
                 providers.isReady(p) -> providers.model(p)
                 p == Provider.LOCAL -> if (ModelDownloader.state.active) "downloading ${ModelDownloader.state.percent}%" else "tap to download"
                 else -> "not set up"
@@ -295,7 +299,9 @@ open class BaseActivity : AppCompatActivity() {
                     appDialog(this).setTitle("Offline AI").setMessage(LocalModels.unsupportedReason(this))
                         .setPositiveButton(android.R.string.ok, null).show()
                 } else if (p == Provider.LOCAL && !providers.isReady(p)) { providers.active = p; onProviderChanged(); OfflineSetup.show(this) }
-                else if (!providers.isReady(p)) {
+                else if (p != Provider.LOCAL && !Premium.allowed(this, Premium.Feature.CLOUD_AI)) {
+                    PremiumActivity.show(this, Premium.Feature.CLOUD_AI)
+                } else if (!providers.isReady(p)) {
                     appDialog(this).setTitle("${p.label} isn't set up")
                         .setMessage("Add an API key for ${p.label} in Settings first.")
                         .setNegativeButton(android.R.string.cancel, null)

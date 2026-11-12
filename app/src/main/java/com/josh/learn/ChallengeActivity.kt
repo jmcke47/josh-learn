@@ -52,6 +52,7 @@ class ChallengeActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!Premium.allowed(this, Premium.Feature.CHALLENGE)) { PremiumActivity.show(this, Premium.Feature.CHALLENGE); finish(); return }
         topic = intent.getStringExtra("topic") ?: run { finish(); return }
         category = intent.getStringExtra("cat")
         scroll = ScrollView(this)

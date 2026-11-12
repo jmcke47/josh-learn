@@ -33,6 +33,7 @@ fun BaseActivity.createLesson(input: String, d: Difficulty, len: LessonLength, c
 }
 
 fun BaseActivity.createPath(input: String, d: Difficulty, finishAfter: Boolean = false) {
+    if (!Premium.canCreatePath(this)) { PremiumActivity.show(this, Premium.Feature.LEARNING_PATHS); return }
     runAi("Planning your learning path…", task = { cfg, onDelta, cancelled -> Gen.path(cfg, input.take(200), d, onDelta, cancelled) }) { path ->
         Repo.paths.add(0, path); Repo.save()
         startActivity(Intent(this, PathActivity::class.java).putExtra("id", path.id))

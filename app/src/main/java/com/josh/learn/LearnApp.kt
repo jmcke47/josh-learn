@@ -21,6 +21,7 @@ class LearnApp : Application() {
             NotificationChannel(ModelDownloadService.CHANNEL, "Offline AI download", NotificationManager.IMPORTANCE_LOW)
                 .apply { description = "Shown only while the offline AI model downloads (Android requires it)" })
         LocalLlm.install(this)
+        runCatching { BillingStore.init(this) } // Play: restore premium; GitHub: no-op (everything is unlocked)
     }
 
     override fun onTrimMemory(level: Int) {
@@ -32,7 +33,7 @@ class LearnApp : Application() {
     companion object {
         fun prefs(c: Context) = c.applicationContext.getSharedPreferences("app", Context.MODE_PRIVATE)
         fun applyTheme(c: Context) {
-            AppCompatDelegate.setDefaultNightMode(when (prefs(c).getString("theme", "system")) {
+            AppCompatDelegate.setDefaultNightMode(when (Display.theme(c)) {
                 "light" -> AppCompatDelegate.MODE_NIGHT_NO
                 "dark", "amoled", "osrs" -> AppCompatDelegate.MODE_NIGHT_YES
                 else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM

@@ -177,7 +177,24 @@ class TopicsWidget : AppWidgetProvider() {
             return v
         }
 
+        fun lockedView(c: Context): RemoteViews {
+            val v = RemoteViews(c.packageName, R.layout.widget_topics)
+            v.setViewVisibility(R.id.widget_grid, android.view.View.GONE)
+            v.setViewVisibility(R.id.widget_tod, android.view.View.GONE)
+            v.setViewVisibility(R.id.widget_due, android.view.View.GONE)
+            v.setViewVisibility(R.id.widget_empty, android.view.View.VISIBLE)
+            v.setTextViewText(R.id.widget_empty, "Unlock Premium for topic tiles on your home screen.")
+            v.setOnClickPendingIntent(R.id.widget_root,
+                PendingIntent.getActivity(c, 80, Intent(c, PremiumActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return v
+        }
+
         fun update(c: Context, m: AppWidgetManager, id: Int) {
+            if (!Premium.allowed(c, Premium.Feature.WIDGET)) {
+                runCatching { m.updateAppWidget(id, lockedView(c)) }
+                return
+            }
             val o = m.getAppWidgetOptions(id)
             val g = grid(o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0, o?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0)
             runCatching {

@@ -48,9 +48,9 @@ printf "VERSION_CODE=%s\nVERSION_NAME=%s\n" "$NEW_CODE" "$NEW_NAME" > version.pr
 trap 'if [[ -f version.properties.bak ]]; then mv version.properties.bak version.properties; echo "Build failed; version reverted to $OLD_NAME ($OLD_CODE)" >&2; fi' ERR
 
 echo "==> Building v$NEW_NAME (versionCode $NEW_CODE)"
-./gradlew --no-daemon -q assembleRelease
+./gradlew --no-daemon -q assembleGithubRelease
 
-APK=app/build/outputs/apk/release/app-release.apk
+APK=app/build/outputs/apk/github/release/app-github-release.apk
 BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
 "$BUILD_TOOLS/apksigner" verify "$APK"
 

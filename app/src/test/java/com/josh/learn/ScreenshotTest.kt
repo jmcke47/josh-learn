@@ -30,6 +30,7 @@ class ScreenshotTest {
     @org.junit.After fun tidyKit() = com.josh.oldschool.OsAnimations.reset()
 
     @Before fun seed() {
+        org.junit.Assume.assumeFalse("github-only UI", com.josh.learn.BuildConfig.PLAY_DISTRIBUTION)
         LearnApp.prefs(ctx).edit().putBoolean("offline_setup_shown", true).putBoolean(UpdateController.PREF_ON_OPEN, false).commit() // no network from onStart in tests
         ModelDownloader.update(ModelDownloader.State())
         LocalModels.abiOverride = true // Robolectric's ABI list isn't arm64

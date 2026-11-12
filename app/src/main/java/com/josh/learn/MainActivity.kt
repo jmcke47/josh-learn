@@ -76,14 +76,14 @@ class MainActivity : BaseActivity() {
 
     override fun buildMenu(menu: Menu) {
         addProviderSwitcher(menu)
-        menu.add("Check for updates").setOnMenuItemClickListener { updater.checkForUpdates(); true }
+        if (!Premium.playDistribution) menu.add("Check for updates").setOnMenuItemClickListener { updater.checkForUpdates(); true }
         menu.add("Settings").setOnMenuItemClickListener { startActivity(Intent(this, SettingsActivity::class.java)); true }
     }
 
     override fun onStart() {
         super.onStart(); ModelDownloader.listen(dlListener)
         // Cold start and every return from the background (throttled to ~10 min inside autoCheck).
-        if (!isChangingConfigurations) updater.autoCheck { m -> showUpdatePrompt(m) }
+        if (!isChangingConfigurations && !Premium.playDistribution) updater.autoCheck { m -> showUpdatePrompt(m) }
     }
 
     /** Non-blocking update prompt (Update / Later) above the bottom nav. */
@@ -138,7 +138,9 @@ class MainActivity : BaseActivity() {
     fun startQuick(topic: String, cat: Topics.Category?) =
         startActivity(Intent(this, QuickActivity::class.java).putExtra("topic", topic).putExtra("cat", cat?.id))
     fun startChallenge(topic: String, cat: Topics.Category?) =
-        startActivity(Intent(this, ChallengeActivity::class.java).putExtra("topic", topic).putExtra("cat", cat?.id))
+        requirePremium(Premium.Feature.CHALLENGE) {
+            startActivity(Intent(this, ChallengeActivity::class.java).putExtra("topic", topic).putExtra("cat", cat?.id))
+        }
 
     /** Topic of the day + Quick 2-minute mode + Challenge entry points at the top of home. */
     private fun topOfHome(col: LinearLayout) = with(col) {
@@ -312,8 +314,10 @@ class MainActivity : BaseActivity() {
                 })
             }
         }
-        addView(textBtn("+ New learning path") {
-            startActivity(Intent(this@MainActivity, NewLessonActivity::class.java).putExtra(NewLessonActivity.EXTRA_PATH, true))
+        addView(textBtn(Premium.lockLabel(context, Premium.Feature.LEARNING_PATHS, "+ New learning path")) {
+            requirePathSlot {
+                startActivity(Intent(this@MainActivity, NewLessonActivity::class.java).putExtra(NewLessonActivity.EXTRA_PATH, true))
+            }
         })
     }
 

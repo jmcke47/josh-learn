@@ -105,6 +105,7 @@ object LearnXp {
 
 /** "+25" XP drop up the right edge on a correct answer (OSRS only). */
 fun Activity.xpDrop(amount: Int = LearnXp.PER_CORRECT) {
+    if (!Premium.allowed(this, Premium.Feature.XP_EXTRAS)) return
     if (isOsrs()) OsXpDrops.rightSide(this, listOf(R.drawable.os_ic_book to amount))
 }
 
@@ -115,6 +116,7 @@ fun Activity.xpDrop(amount: Int = LearnXp.PER_CORRECT) {
 fun Activity.finishXp(topicKey: String, skillName: String, correct: Int): Pair<Int, Int> {
     val gained = correct * LearnXp.PER_CORRECT
     val (old, new) = LearnXp.add(this, topicKey, gained)
+    if (!Premium.allowed(this, Premium.Feature.XP_EXTRAS)) return old to new
     if (isOsrs()) {
         val skill = skillName.take(40)
         if (new > old) OsBanner.levelUp(this, skill, new, R.drawable.os_ic_book)

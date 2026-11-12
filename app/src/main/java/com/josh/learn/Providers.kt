@@ -48,7 +48,7 @@ class ProviderStore(context: Context) {
             val stored = prefs.getString("active", null)?.let { runCatching { Provider.valueOf(it) }.getOrNull() }?.takeIf { it in Provider.visible }
             val localOk = Features.OFFLINE_AI && LocalModels.supported(ctx)
             val cloud = Provider.entries.firstOrNull { it != Provider.LOCAL && isReady(it) }
-            return when {
+            val chosen = when {
                 stored == Provider.LOCAL && !localOk -> cloud ?: Provider.GEMINI // phone can't run it: fall back
                 stored != null -> stored
                 localOk && LocalModels.usable(ctx) != null -> Provider.LOCAL     // offline is the default once downloaded
@@ -56,6 +56,9 @@ class ProviderStore(context: Context) {
                 localOk -> Provider.LOCAL
                 else -> Provider.GEMINI
             }
+            return if (chosen != Provider.LOCAL && !Premium.allowed(ctx, Premium.Feature.CLOUD_AI)) {
+                if (localOk) Provider.LOCAL else Provider.LOCAL
+            } else chosen
         }
         set(v) = prefs.edit { putString("active", v.name) }
 

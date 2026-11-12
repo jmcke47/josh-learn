@@ -13,3 +13,4 @@ screenshots/
 suggested_topics.json
 app/src/main/assets/suggested_topics.json
 build-tmp/
+*.aab

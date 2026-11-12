@@ -13,18 +13,18 @@ import com.google.android.material.timepicker.TimeFormat
 
 class SettingsActivity : BaseActivity() {
     private lateinit var root: LinearLayout
-    private lateinit var updater: UpdateController
+    private var updater: UpdateController? = null
     private val expanded = mutableSetOf<Provider>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        updater = UpdateController(this)
+        if (!Premium.playDistribution) updater = UpdateController(this)
         root = vbox(16)
         screen("Settings", root, scroll = true)
         render()
     }
 
-    override fun onResume() { super.onResume(); updater.onResume() }
+    override fun onResume() { super.onResume(); updater?.onResume() }
     private var dlView: android.widget.TextView? = null
     private var lastStatus: ModelDownloader.Status? = null
     private val dlListener: (ModelDownloader.State) -> Unit = { st ->
@@ -119,8 +119,9 @@ class SettingsActivity : BaseActivity() {
                     addView(appChip("choice").apply {
                         id = View.generateViewId(); isCheckable = true
                         text = p.short + if (providers.isReady(p)) "" else " (not set up)"
-                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || (p == Provider.LOCAL && LocalModels.supported(context))
+                        isChecked = providers.active == p; isEnabled = providers.isReady(p) || providers.active == p || (p == Provider.LOCAL && LocalModels.supported(context)) || (p != Provider.LOCAL && !Premium.allowed(context, Premium.Feature.CLOUD_AI))
                         setOnClickListener {
+                            if (p != Provider.LOCAL && !Premium.allowed(context, Premium.Feature.CLOUD_AI)) { PremiumActivity.show(this@SettingsActivity, Premium.Feature.CLOUD_AI); return@setOnClickListener }
                             if (providers.isReady(p) || (p == Provider.LOCAL && LocalModels.supported(context))) { providers.active = p; onProviderChanged(); toast("Now using ${p.label}") }
                         }
                     })
@@ -128,8 +129,13 @@ class SettingsActivity : BaseActivity() {
             })
             if (Features.OFFLINE_AI) addView(offlineCard())
             addView(title("Online providers (optional)"))
-            addView(muted("Better answers, but need your own API key and internet. Each key is stored encrypted."))
-            Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }
+            if (!Premium.allowed(context, Premium.Feature.CLOUD_AI)) {
+                addView(muted("Cloud AI (Gemini, Grok, ChatGPT, Claude) is a Premium feature. Offline AI stays free."))
+                addView(button("Unlock cloud AI") { PremiumActivity.show(this@SettingsActivity, Premium.Feature.CLOUD_AI) })
+            } else {
+                addView(muted("Better answers, but need your own API key and internet. Each key is stored encrypted."))
+                Provider.entries.filter { it != Provider.LOCAL }.forEach { addView(providerCard(it)) }
+            }
 
             // ---------------- Suggested topics (imported)
             addView(title("Your topics"))
@@ -143,8 +149,11 @@ class SettingsActivity : BaseActivity() {
                 addView(textBtn(if (s.isCustom) "Delete" else "Remove") { confirmDeleteTopic(s) { render() } }.apply { contentDescription = "Remove ${s.title}" })
             }) }
             addView(button("+ New topic") { showTopicEditor(null) { render() } })
+            addView(outlined(Premium.lockLabel(context, Premium.Feature.EXPORT, "Export library")) {
+                requirePremium(Premium.Feature.EXPORT) { LibraryExport.share(this@SettingsActivity) }
+            })
             addView(hbox {
-                addView(outlined(if (nImported > 0) "Re-import" else "Import my topics") { importTopics() })
+                addView(outlined(if (nImported > 0) "Re-import" else Premium.lockLabel(context, Premium.Feature.EXPORT, "Import my topics")) { importTopics() })
                 if (nImported > 0) { addView(View(context), LinearLayout.LayoutParams(dp(8), 1)); addView(textBtn("Remove imported") {
                     appDialog(this@SettingsActivity).setTitle("Remove all imported topics?")
                         .setMessage("Removes the topics imported from your Grok export. Topics you made yourself and lessons you made stay.")
@@ -164,8 +173,13 @@ class SettingsActivity : BaseActivity() {
             // ---------------- Display
             addView(title("Display"))
             addView(muted("Theme"))
-            addView(choiceChips(Display.themes, Display.theme(context), { Display.themeLabel(it) }) {
-                prefs.edit { putString("theme", it) }; LearnApp.applyTheme(this@SettingsActivity); TopicsWidget.refresh(this@SettingsActivity); recreate()
+            addView(choiceChips(Display.themes, Display.theme(context), { t ->
+                val f = when (t) { "osrs" -> Premium.Feature.THEME_OSRS; "amoled" -> Premium.Feature.THEME_AMOLED; else -> null }
+                if (f != null && !Premium.allowed(context, f)) "🔒 " + Display.themeLabel(t) else Display.themeLabel(t)
+            }) { t ->
+                val f = when (t) { "osrs" -> Premium.Feature.THEME_OSRS; "amoled" -> Premium.Feature.THEME_AMOLED; else -> null }
+                if (f != null && !Premium.allowed(this@SettingsActivity, f)) { PremiumActivity.show(this@SettingsActivity, f); recreate() }
+                else { prefs.edit { putString("theme", t) }; LearnApp.applyTheme(this@SettingsActivity); TopicsWidget.refresh(this@SettingsActivity); recreate() }
             })
             if (Display.theme(context) == "osrs") addView(textBtn("OSRS fonts: OS Small + Pixelify Sans (SIL Open Font License)") {
                 // Both licence files ship with the shared Old School kit (oldschool-theme/src/main/assets/licenses).
@@ -185,16 +199,40 @@ class SettingsActivity : BaseActivity() {
             })
             addView(muted("Off: one depth (Like I'm 5 … Expert) for everything."))
 
-            // ---------------- Updates
-            addView(title("Updates"))
-            addView(muted("Josh Learn v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"))
-            addView(MaterialSwitch(context).apply {
-                text = "Check for updates on open"; isChecked = UpdateController.checkOnOpen(context)
-                setOnCheckedChangeListener { _, c -> prefs.edit { putBoolean(UpdateController.PREF_ON_OPEN, c) } }
+            // ---------------- Premium
+            addView(title("Josh Learn Premium"))
+            when {
+                !Premium.playDistribution -> addView(muted("This GitHub build includes every feature. The Play edition uses a one-time unlock."))
+                Premium.unlocked(context) -> addView(muted("Premium is unlocked on this device."))
+                Entitlements.isPending(context) -> addView(muted("Your Premium purchase is pending confirmation from Google Play."))
+                BillingStore.status == BillingStore.Status.Unavailable -> addView(muted(BillingStore.lastMessage
+                    ?: "Purchases aren't available on this device. You need the Play Store."))
+                else -> {
+                    val price = BillingStore.product?.price
+                    addView(muted("Unlock cloud AI, unlimited learning paths, OSRS and AMOLED themes, the 60-second challenge, XP extras, the home-screen widget and library export" +
+                        (price?.let { " — $it, one-time" } ?: " as a one-time purchase") + "."))
+                    addView(button("Unlock Premium") { PremiumActivity.show(this@SettingsActivity) })
+                }
+            }
+            if (Premium.playDistribution) addView(outlined("Restore purchases") {
+                BillingStore.restore { toast(it); render() }
             })
-            addView(muted("Checks quietly when you open the app (at most every 10 minutes) and offers new versions."))
-            addView(button("Check for updates") { updater.checkForUpdates() })
-            addView(textBtn("Advanced: update source URL") { updater.editUpdateUrl() })
+
+            // ---------------- Updates (GitHub sideload only — Play forbids self-updating)
+            if (!Premium.playDistribution) {
+                addView(title("Updates"))
+                addView(muted("Josh Learn v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"))
+                addView(MaterialSwitch(context).apply {
+                    text = "Check for updates on open"; isChecked = UpdateController.checkOnOpen(context)
+                    setOnCheckedChangeListener { _, c -> prefs.edit { putBoolean(UpdateController.PREF_ON_OPEN, c) } }
+                })
+                addView(muted("Checks quietly when you open the app (at most every 10 minutes) and offers new versions."))
+                addView(button("Check for updates") { updater?.checkForUpdates() })
+                addView(textBtn("Advanced: update source URL") { updater?.editUpdateUrl() })
+            } else {
+                addView(title("About"))
+                addView(muted("Josh Learn v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}). Updates come from Google Play."))
+            }
 
             addView(title("Privacy"))
             addView(muted("API keys are encrypted with a key held in the Android Keystore and never leave this phone except to the provider you chose. " +

@@ -35,6 +35,10 @@ class UrlSanitizeTest {
     }
 
     @Test fun builtInDefaultIsValid() {
-        assertEquals(BuildConfig.UPDATE_MANIFEST_URL, UpdateHttp.sanitizeUrl(BuildConfig.UPDATE_MANIFEST_URL))
+        if (BuildConfig.PLAY_DISTRIBUTION) {
+            assertEquals("", BuildConfig.UPDATE_MANIFEST_URL) // Play flavor has no self-updater
+        } else {
+            assertEquals(BuildConfig.UPDATE_MANIFEST_URL, UpdateHttp.sanitizeUrl(BuildConfig.UPDATE_MANIFEST_URL))
+        }
     }
 }
