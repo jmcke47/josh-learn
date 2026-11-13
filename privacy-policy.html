@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy — AI Lessons</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.55;
+           max-width: 42rem; margin: 2rem auto; padding: 0 1.25rem; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.2rem; margin-top: 1.8rem; }
+    .updated { color: #555; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy policy — AI Lessons</h1>
+  <p class="updated">Last updated: 13 November 2026.</p>
+  <p>This policy describes how the AI Lessons Android app (“the app”) handles information. The app is built for learning on your phone. It does not require an account with us, and we do not run a backend that collects your lessons or keys.</p>
+
+  <h2>Who we are</h2>
+  <p>AI Lessons is the Google Play edition of the app (a separate sideload build is released on GitHub under the name Josh Learn). Contact: <a href="mailto:jmcke47@gmail.com">jmcke47@gmail.com</a></p>
+
+  <h2>What the app stores on your device</h2>
+  <p>All of the following stay on your phone (app private storage) unless you choose to export or share them:</p>
+  <ul>
+    <li>Lessons, quizzes, flashcards, learning paths and topics you create or import</li>
+    <li>Display settings (theme, text size, Simple mode, high contrast) and other preferences</li>
+    <li>Personal-best scores for challenge mode and, if you use them, XP totals</li>
+    <li>A local record of whether you have unlocked AI Lessons Premium</li>
+  </ul>
+  <p>API keys you enter for a cloud provider (Google Gemini, xAI Grok, OpenAI, Anthropic, or a custom endpoint) are encrypted with a key held in the Android Keystore and stored on the device. They are never logged, and they never leave the phone except when the app sends a request to the provider you selected.</p>
+  <p>The app sets Android backup off, so platform backup does not include this data.</p>
+  <p>If you import a Grok data export or a topics file, the file is read on the device. The app keeps only the topic names and sub-topics you confirm; it does not keep the original chats.</p>
+
+  <h2>What is sent over the network — and only when you opt in</h2>
+  <p><strong>Default / free use.</strong> Creating lessons with the on-device (offline) model happens on your phone. The model file is downloaded from a public Hugging Face repository when you tap Download, and the file’s checksum is verified. After that, prompts and answers for that model do not leave the device.</p>
+  <p><strong>Cloud AI (Premium, optional).</strong> If you add an API key and switch to Gemini, Grok, ChatGPT, Claude or a custom OpenAI-compatible server, the app sends your prompt and enough lesson context for the task to that provider, over HTTPS, using the key you supplied. We do not operate those services. Their own privacy policies apply to what they receive (Google, xAI, OpenAI, Anthropic, or whoever runs a custom endpoint you configure). You can remove a key in Settings at any time and keep using the offline model instead.</p>
+  <p><strong>Google Play Billing.</strong> If you install from Google Play and buy or restore the one-time Premium unlock (<code>premium_unlock</code>), Google Play processes the payment. The app receives a purchase token and an entitlement from Play in order to unlock features and to restore a purchase on another device signed into the same Google account. We do not receive your payment card details.</p>
+  <p><strong>App updates (Play build).</strong> Updates are delivered by Google Play. The Play build does not check a private update server and cannot install an APK itself.</p>
+  <p><strong>GitHub sideload build only.</strong> That separate build may check a public <code>update.json</code> on GitHub when you open the app (you can turn this off) and, if you choose Update, download and install an APK. That channel is not used in the Play edition.</p>
+  <p>The app needs the Internet and Network State permissions for the optional network uses above, and to download an offline model if you ask it to. A foreground-service notification may appear only while that model is downloading, because Android requires it; it is removed when the download ends.</p>
+
+  <h2>What we do not collect</h2>
+  <ul>
+    <li>We do not have user accounts in the app.</li>
+    <li>We do not include advertising SDKs, analytics SDKs, crash-reporting SDKs or tracking pixels.</li>
+    <li>We do not sell your information.</li>
+    <li>We do not use your lessons or prompts to train our own models (we do not operate a model training service). A cloud provider you opt into may handle prompts under that provider’s policy.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>AI Lessons is a mixed-audience education app. Families may include children from about age 6 and up (target groups 6–8, 9–12, 13–15, 16–17, and 18+). It is not a preschool app, and it is not “18 and over only.”</p>
+  <p>We do not want to collect personal information from children. In the Play edition there is no account with us, no ads, and no analytics SDK. Cloud AI is off until an adult turns it on. Even then, prompts go only to the provider you chose. Please do not type a child’s name, address, school, or other personal details into lessons or chats. Importing a Grok export or a topics file is allowed only after a short adult check; the file is read on the device and is not uploaded to us. Purchases, external links, cloud AI, importing, and video downloads ask for a short adult check first.</p>
+  <p>If you believe a child has given us personal information (for example in an email to jmcke47@gmail.com), write to us and we will delete it. This is intended to be consistent with COPPA and with GDPR rules on children’s data (GDPR-K) at a high level: we do not operate a server of children’s lesson data, and we do not sell data. You can also delete lessons, topics, and keys in the app, or uninstall it.</p>
+  <p>You should not enter another person’s personal data into lessons or prompts.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li>Delete a lesson, topic, imported topic list or API key in the app.</li>
+    <li>Uninstall the app to remove all local data.</li>
+    <li>Turn off cloud AI and use the on-device model only.</li>
+    <li>Request deletion or ask a question by emailing <a href="mailto:jmcke47@gmail.com">jmcke47@gmail.com</a>.</li>
+  </ul>
+  <p>Premium purchases are managed by Google Play (including refunds under Google’s policies).</p>
+
+  <h2>Changes</h2>
+  <p>We may update this policy. The “Last updated” date at the top will change, and a revised copy will be published at the same URL.</p>
+</body>
+</html>
